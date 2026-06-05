@@ -1,0 +1,319 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+/// Модель бронирования
+class BookingModel {
+  final String bookingId;
+  final String userId;
+  final String choyxonaId;
+  final String choyxonaName;
+  final String bookingDate; // Формат: YYYY-MM-DD
+  final String bookingTime; // Формат: HH:MM
+  final int duration; // В минутах
+  final int guestCount;
+  final String guestName;
+  final String guestPhone;
+  final String guestEmail;
+  final String specialRequests;
+  final String status; // 'pending', 'confirmed', 'cancelled', 'completed'
+  final String paymentStatus; // 'unpaid', 'paid', 'refunded'
+  final String paymentMethod; // 'cash', 'click', 'payme'
+  final String? transactionId;
+  final String? tableNumber;
+  final String? tableId;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String? cancellationReason;
+  final DateTime? cancelledAt;
+
+  BookingModel({
+    required this.bookingId,
+    required this.userId,
+    required this.choyxonaId,
+    required this.choyxonaName,
+    required this.bookingDate,
+    required this.bookingTime,
+    required this.duration,
+    required this.guestCount,
+    required this.guestName,
+    required this.guestPhone,
+    required this.guestEmail,
+    required this.specialRequests,
+    required this.status,
+    required this.paymentStatus,
+    required this.paymentMethod,
+    this.transactionId,
+    this.tableNumber,
+    this.tableId,
+    required this.createdAt,
+    required this.updatedAt,
+    this.cancellationReason,
+    this.cancelledAt,
+  });
+
+  /// Проверка статусов
+  bool get isPending => status == 'pending';
+  bool get isConfirmed => status == 'confirmed';
+  bool get isCancelled => status == 'cancelled';
+  bool get isCompleted => status == 'completed';
+
+  /// Проверка оплаты
+  bool get isPaid => paymentStatus == 'paid';
+  bool get isUnpaid => paymentStatus == 'unpaid';
+  bool get isRefunded => paymentStatus == 'refunded';
+
+  /// Можно ли отменить бронирование
+  bool canCancel() {
+    if (isCancelled || isCompleted) return false;
+
+    // Проверяем, что до бронирования осталось больше 2 часов
+    final bookingDateTime = _parseBookingDateTime();
+    final now = DateTime.now();
+    final difference = bookingDateTime.difference(now);
+
+    return difference.inHours >= 2;
+  }
+
+  /// Получить полную дату и время бронирования
+  DateTime _parseBookingDateTime() {
+    final dateParts = bookingDate.split('-');
+    final timeParts = bookingTime.split(':');
+
+    return DateTime(
+      int.parse(dateParts[0]), // год
+      int.parse(dateParts[1]), // месяц
+      int.parse(dateParts[2]), // день
+      int.parse(timeParts[0]), // час
+      int.parse(timeParts[1]), // минута
+    );
+  }
+
+  /// Получить дату и время в читаемом формате
+  String get formattedDateTime {
+    final dateTime = _parseBookingDateTime();
+    final months = [
+      'января',
+      'февраля',
+      'марта',
+      'апреля',
+      'мая',
+      'июня',
+      'июля',
+      'августа',
+      'сентября',
+      'октября',
+      'ноября',
+      'декабря'
+    ];
+
+    return '${dateTime.day} ${months[dateTime.month - 1]} ${dateTime.year}, $bookingTime';
+  }
+
+  /// Получить статус в читаемом формате
+  String get statusText {
+    switch (status) {
+      case 'pending':
+        return 'Ожидает подтверждения';
+      case 'confirmed':
+        return 'Подтверждено';
+      case 'cancelled':
+        return 'Отменено';
+      case 'completed':
+        return 'Завершено';
+      default:
+        return 'Неизвестно';
+    }
+  }
+
+  /// Получить цвет статуса
+  String get statusColor {
+    switch (status) {
+      case 'pending':
+        return '#FFA726'; // Оранжевый
+      case 'confirmed':
+        return '#66BB6A'; // Зелёный
+      case 'cancelled':
+        return '#EF5350'; // Красный
+      case 'completed':
+        return '#42A5F5'; // Синий
+      default:
+        return '#9E9E9E'; // Серый
+    }
+  }
+
+  /// Валидация данных бронирования
+  static String? validateBooking({
+    required String bookingDate,
+    required String bookingTime,
+    required int guestCount,
+    required String guestName,
+    required String guestPhone,
+  }) {
+    // Проверка даты
+    if (bookingDate.isEmpty) {
+      return 'Выберите дату бронирования';
+    }
+
+    // Проверка времени
+    if (bookingTime.isEmpty) {
+      return 'Выберите время бронирования';
+    }
+
+    // Проверка количества гостей
+    if (guestCount < 1) {
+      return 'Укажите количество гостей';
+    }
+
+    if (guestCount > 20) {
+      return 'Максимальное количество гостей: 20';
+    }
+
+    // Проверка имени
+    if (guestName.trim().isEmpty) {
+      return 'Введите имя';
+    }
+
+    if (guestName.trim().length < 2) {
+      return 'Имя должно содержать минимум 2 символа';
+    }
+
+    // Проверка телефона
+    if (guestPhone.trim().isEmpty) {
+      return 'Введите номер телефона';
+    }
+
+    // Проверка формата телефона (узбекский номер)
+    final phoneRegex = RegExp(r'^\+998\d{9}$');
+    if (!phoneRegex.hasMatch(guestPhone.replaceAll(' ', '').replaceAll('-', ''))) {
+      return 'Неверный формат телефона. Пример: +998901234567';
+    }
+
+    // Проверка, что бронирование не в прошлом
+    try {
+      final dateParts = bookingDate.split('-');
+      final timeParts = bookingTime.split(':');
+
+      final bookingDateTime = DateTime(
+        int.parse(dateParts[0]),
+        int.parse(dateParts[1]),
+        int.parse(dateParts[2]),
+        int.parse(timeParts[0]),
+        int.parse(timeParts[1]),
+      );
+
+      if (bookingDateTime.isBefore(DateTime.now())) {
+        return 'Нельзя забронировать на прошедшее время';
+      }
+    } catch (e) {
+      return 'Неверный формат даты или времени';
+    }
+
+    return null; // Всё ОК
+  }
+
+  /// Создать из Firestore документа
+  factory BookingModel.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+
+    return BookingModel(
+      bookingId: doc.id,
+      userId: data['userId'] ?? '',
+      choyxonaId: data['choyxonaId'] ?? '',
+      choyxonaName: data['choyxonaName'] ?? '',
+      bookingDate: data['bookingDate'] ?? '',
+      bookingTime: data['bookingTime'] ?? '',
+      duration: data['duration'] ?? 120,
+      guestCount: data['guestCount'] ?? 1,
+      guestName: data['guestName'] ?? '',
+      guestPhone: data['guestPhone'] ?? '',
+      guestEmail: data['guestEmail'] ?? '',
+      specialRequests: data['specialRequests'] ?? '',
+      status: data['status'] ?? 'pending',
+      paymentStatus: data['paymentStatus'] ?? 'unpaid',
+      paymentMethod: data['paymentMethod'] ?? 'cash',
+      transactionId: data['transactionId'],
+      tableNumber: data['tableNumber'],
+      tableId: data['tableId'],
+      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      updatedAt: (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      cancellationReason: data['cancellationReason'],
+      cancelledAt: (data['cancelledAt'] as Timestamp?)?.toDate(),
+    );
+  }
+
+  /// Конвертировать в Map для Firestore
+  Map<String, dynamic> toMap() {
+    return {
+      'userId': userId,
+      'choyxonaId': choyxonaId,
+      'choyxonaName': choyxonaName,
+      'bookingDate': bookingDate,
+      'bookingTime': bookingTime,
+      'duration': duration,
+      'guestCount': guestCount,
+      'guestName': guestName,
+      'guestPhone': guestPhone,
+      'guestEmail': guestEmail,
+      'specialRequests': specialRequests,
+      'status': status,
+      'paymentStatus': paymentStatus,
+      'paymentMethod': paymentMethod,
+      'transactionId': transactionId,
+      'tableNumber': tableNumber,
+      'tableId': tableId,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': Timestamp.fromDate(updatedAt),
+      'cancellationReason': cancellationReason,
+      'cancelledAt': cancelledAt != null ? Timestamp.fromDate(cancelledAt!) : null,
+    };
+  }
+
+  /// Копировать с изменениями
+  BookingModel copyWith({
+    String? userId,
+    String? choyxonaId,
+    String? choyxonaName,
+    String? bookingDate,
+    String? bookingTime,
+    int? duration,
+    int? guestCount,
+    String? guestName,
+    String? guestPhone,
+    String? guestEmail,
+    String? specialRequests,
+    String? status,
+    String? paymentStatus,
+    String? paymentMethod,
+    String? transactionId,
+    String? tableNumber,
+    String? tableId,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? cancellationReason,
+    DateTime? cancelledAt,
+  }) {
+    return BookingModel(
+      bookingId: bookingId,
+      userId: userId ?? this.userId,
+      choyxonaId: choyxonaId ?? this.choyxonaId,
+      choyxonaName: choyxonaName ?? this.choyxonaName,
+      bookingDate: bookingDate ?? this.bookingDate,
+      bookingTime: bookingTime ?? this.bookingTime,
+      duration: duration ?? this.duration,
+      guestCount: guestCount ?? this.guestCount,
+      guestName: guestName ?? this.guestName,
+      guestPhone: guestPhone ?? this.guestPhone,
+      guestEmail: guestEmail ?? this.guestEmail,
+      specialRequests: specialRequests ?? this.specialRequests,
+      status: status ?? this.status,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      transactionId: transactionId ?? this.transactionId,
+      tableNumber: tableNumber ?? this.tableNumber,
+      tableId: tableId ?? this.tableId,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      cancellationReason: cancellationReason ?? this.cancellationReason,
+      cancelledAt: cancelledAt ?? this.cancelledAt,
+    );
+  }
+}

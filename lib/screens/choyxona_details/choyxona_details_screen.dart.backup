@@ -1,0 +1,333 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../../models/choyxona_model.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import 'widgets/choyxona_card.dart';
+import '../choyxona_details/choyxona_details_screen.dart';
+import '../map/map_screen.dart';
+
+/// Главный экран со списком чайхан
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  String _selectedCategory = 'all';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: Column(
+        children: [
+          // Шапка с поиском
+          _buildHeader(),
+
+          // Категории
+          _buildCategories(),
+
+          // Список чайхан
+          Expanded(
+            child: _buildChoyxonasList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 50, 16, 16),
+      decoration: BoxDecoration(
+        gradient: AppColors.primaryGradient,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Приветствие
+          Text(
+            'Найди свою',
+            style: AppTextStyles.headlineLarge.copyWith(
+              color: AppColors.textWhite,
+            ),
+          ),
+          Text(
+            'идеальную чайхану',
+            style: AppTextStyles.headlineLarge.copyWith(
+              color: AppColors.textWhite,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // Поисковая строка и кнопка карты
+          Row(
+            children: [
+              // Поиск
+              Expanded(
+                child: Container(
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: AppColors.textWhite,
+                    borderRadius: BorderRadius.circular(25),
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Поиск чайханы...',
+                      hintStyle: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.search,
+                        color: AppColors.textSecondary,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 15,
+                      ),
+                    ),
+                    onChanged: (value) {
+                      setState(() {});
+                    },
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              // Кнопка карты
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: AppColors.textWhite,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  icon: const Icon(
+                    Icons.map,
+                    color: AppColors.primary,
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const MapScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategories() {
+    final categories = [
+      {'id': 'all', 'name': 'Все', 'icon': Icons.restaurant},
+      {'id': 'traditional', 'name': 'Традиционные', 'icon': Icons.mosque},
+      {'id': 'modern', 'name': 'Современные', 'icon': Icons.coffee},
+      {'id': 'fast_casual', 'name': 'Быстрые', 'icon': Icons.fast_forward},
+      {'id': 'fine_dining', 'name': 'Премиум', 'icon': Icons.star},
+    ];
+
+    return Container(
+      height: 100,
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: categories.length,
+        itemBuilder: (context, index) {
+          final category = categories[index];
+          final isSelected = _selectedCategory == category['id'];
+
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _selectedCategory = category['id'] as String;
+              });
+            },
+            child: Container(
+              width: 80,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                color: isSelected ? AppColors.primary : AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.shadow,
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    category['icon'] as IconData,
+                    color: isSelected
+                        ? AppColors.textWhite
+                        : AppColors.textSecondary,
+                    size: 28,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    category['name'] as String,
+                    style: AppTextStyles.labelSmall.copyWith(
+                      color: isSelected
+                          ? AppColors.textWhite
+                          : AppColors.textSecondary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildChoyxonasList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('choyxonas').snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Ошибка загрузки: ${snapshot.error}',
+              style: AppTextStyles.bodyMedium,
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return _buildEmptyState();
+        }
+
+        final choyxonas = snapshot.data!.docs
+            .map((doc) => Choyxona.fromFirestore(doc))
+            .where((choyxona) {
+          // Фильтр по категории
+          if (_selectedCategory != 'all' &&
+              choyxona.category != _selectedCategory) {
+            return false;
+          }
+
+          // Фильтр по поиску
+          if (_searchController.text.isNotEmpty) {
+            final query = _searchController.text.toLowerCase();
+            return choyxona.name.toLowerCase().contains(query) ||
+                choyxona.address.city.toLowerCase().contains(query) ||
+                choyxona.cuisine.any((c) => c.toLowerCase().contains(query));
+          }
+
+          return true;
+        }).toList();
+
+        if (choyxonas.isEmpty) {
+          return _buildEmptyState(
+            message: 'Ничего не найдено',
+            subtitle: 'Попробуйте изменить фильтры',
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: choyxonas.length,
+          itemBuilder: (context, index) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: ChoyxonaCard(
+                choyxona: choyxonas[index],
+                onTap: () => _navigateToDetails(context, choyxonas[index]),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyState({
+    String message = 'Нет чайхан',
+    String subtitle = 'Скоро появятся новые заведения',
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.restaurant,
+                size: 60,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              message,
+              style: AppTextStyles.headlineMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              subtitle,
+              style: AppTextStyles.bodyLarge.copyWith(
+                color: AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _navigateToDetails(BuildContext context, Choyxona choyxona) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChoyxonaDetailsScreen(choyxona: choyxona),
+      ),
+    );
+  }
+}

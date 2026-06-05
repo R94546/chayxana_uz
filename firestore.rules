@@ -1,0 +1,332 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========== HELPER FUNCTIONS ==========
+    
+    /// Проверка авторизации
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    /// Получить данные пользователя
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    /// Проверка роли пользователя
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
+    }
+    
+    /// Проверка, что пользователь - владелец ресурса
+    function isOwner(ownerId) {
+      return isAuthenticated() && request.auth.uid == ownerId;
+    }
+    
+    /// Проверка, что пользователь - клиент
+    function isClient() {
+      return hasRole('client') || hasRole('user');
+    }
+    
+    /// Проверка, что пользователь - владелец чайханы
+    function isChoyxonaOwner() {
+      return hasRole('owner');
+    }
+    
+    /// Проверка, что пользователь - супер админ
+    function isAdmin() {
+      return hasRole('admin') || hasRole('superadmin');
+    }
+    
+    /// Проверка, что пользователь - владелец конкретной чайханы
+    function isChoyxonaOwnerOf(choyxonaId) {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/choyxonas/$(choyxonaId)).data.ownerId == request.auth.uid;
+    }
+    
+    /// Проверка, что пользователь - администратор чайханы (choyxona_admin)
+    function isChoyxonaAdmin() {
+      return isAuthenticated() && getUserData().role == 'choyxona_admin';
+    }
+    
+    /// Проверка, что пользователь - админ этой чайханы (по choyxonaId в профиле)
+    function isChoyxonaAdminOf(choyxonaId) {
+      return isAuthenticated() && 
+             getUserData().role == 'choyxona_admin' && 
+             getUserData().choyxonaId == choyxonaId;
+    }
+    
+    /// Проверка доступа к чайхане (владелец, админ чайханы привязанный к ней, или супер-админ)
+    function hasChoyxonaAccess(choyxonaId) {
+      return isChoyxonaOwnerOf(choyxonaId) || isChoyxonaAdminOf(choyxonaId) || isAdmin();
+    }
+    
+    /// Может ли пользователь управлять чайханой (owner или choyxona_admin с привязкой)
+    function canManageChoyxona(choyxonaId) {
+      let userData = getUserData();
+      return isAuthenticated() && (
+        // Владелец чайханы
+        get(/databases/$(database)/documents/choyxonas/$(choyxonaId)).data.ownerId == request.auth.uid ||
+        // Админ чайханы с привязкой к этой чайхане
+        (userData.role == 'choyxona_admin' && userData.choyxonaId == choyxonaId) ||
+        // Супер админ (оба варианта)
+        userData.role == 'admin' ||
+        userData.role == 'superadmin'
+      );
+    }
+
+    // ========== USERS COLLECTION ==========
+    
+    match /users/{userId} {
+      // Чтение: авторизованные пользователи
+      allow read: if isAuthenticated();
+      
+      // Создание: только при регистрации своего профиля
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == userId &&
+                       request.resource.data.role in ['client', 'user', 'owner'];
+      
+      // Обновление: сам пользователь или админ
+      allow update: if isAuthenticated() && 
+                       (request.auth.uid == userId || isAdmin());
+      
+      // Удаление: только админ
+      allow delete: if isAdmin();
+    }
+    
+    // ========== CHOYXONAS COLLECTION ==========
+    
+    match /choyxonas/{choyxonaId} {
+      // Чтение: все (публичные данные)
+      allow read: if true;
+      
+      // Создание: владельцы и админы
+      allow create: if isAuthenticated() && 
+                       (isChoyxonaOwner() || isAdmin()) &&
+                       request.resource.data.ownerId == request.auth.uid;
+      
+      // Обновление: владелец чайханы, админ чайханы (привязанный) или супер-админ
+      // ЭТО КЛЮЧЕВОЕ ИЗМЕНЕНИЕ - разрешаем choyxona_admin обновлять свою чайхану
+      allow update: if isAuthenticated() && canManageChoyxona(choyxonaId);
+      
+      // Удаление: только супер-админ
+      allow delete: if isAdmin();
+    }
+    
+    // ========== WORKING_HOURS COLLECTION (если отдельная коллекция) ==========
+    
+    match /working_hours/{docId} {
+      // Чтение: все
+      allow read: if true;
+      
+      // Создание: управляющие чайханой
+      allow create: if isAuthenticated() && 
+                       canManageChoyxona(request.resource.data.choyxonaId);
+      
+      // Обновление, удаление: управляющие чайханой
+      allow update, delete: if isAuthenticated() && 
+                               canManageChoyxona(resource.data.choyxonaId);
+    }
+    
+    // ========== BOOKINGS COLLECTION ==========
+    
+    match /bookings/{bookingId} {
+      // Чтение: создатель бронирования, админ чайханы или супер-админ
+      allow read: if isAuthenticated() && 
+                     (isOwner(resource.data.userId) || 
+                      hasChoyxonaAccess(resource.data.choyxonaId));
+      
+      // Создание: авторизованные пользователи
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid;
+      
+      // Обновление: создатель, админ чайханы или супер-админ
+      allow update: if isAuthenticated() && 
+                       (isOwner(resource.data.userId) ||
+                        hasChoyxonaAccess(resource.data.choyxonaId));
+      
+      // Удаление: создатель (для completed/cancelled), админ чайханы или супер-админ
+      allow delete: if isAuthenticated() && 
+                       (isOwner(resource.data.userId) ||
+                        hasChoyxonaAccess(resource.data.choyxonaId));
+    }
+    
+    // ========== ORDERS COLLECTION ==========
+    
+    match /orders/{orderId} {
+      // Чтение: владелец заказа, владелец чайханы, официант, админ чайханы или супер-админ
+      allow read: if isAuthenticated() && 
+                     (isOwner(resource.data.userId) ||
+                      hasChoyxonaAccess(resource.data.choyxonaId) ||
+                      isOwner(resource.data.waiterId));
+      
+      // Создание: авторизованные пользователи
+      allow create: if isAuthenticated();
+      
+      // Обновление: владелец чайханы, официант, админ чайханы или супер-админ
+      allow update: if isAuthenticated() && 
+                       (hasChoyxonaAccess(resource.data.choyxonaId) ||
+                        isOwner(resource.data.waiterId));
+      
+      // Удаление: владелец чайханы, админ чайханы или супер-админ
+      allow delete: if isAuthenticated() && 
+                       hasChoyxonaAccess(resource.data.choyxonaId);
+    }
+    
+    // ========== REVIEWS COLLECTION ==========
+    
+    match /reviews/{reviewId} {
+      // Чтение: все
+      allow read: if true;
+      
+      // Создание: авторизованные пользователи
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid;
+      
+      // Обновление: создатель, владелец чайханы или админ
+      allow update: if isAuthenticated() && 
+                       (isOwner(resource.data.userId) ||
+                        hasChoyxonaAccess(resource.data.choyxonaId));
+      
+      // Удаление: создатель или админ
+      allow delete: if isAuthenticated() && 
+                       (isOwner(resource.data.userId) || isAdmin());
+    }
+    
+    // ========== FAVORITES COLLECTION ==========
+    
+    match /favorites/{favoriteId} {
+      // Чтение: только владелец
+      allow read: if isAuthenticated() && 
+                     isOwner(resource.data.userId);
+      
+      // Создание: авторизованные пользователи
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid;
+      
+      // Обновление: только владелец
+      allow update: if isAuthenticated() && 
+                       isOwner(resource.data.userId);
+      
+      // Удаление: владелец или админ
+      allow delete: if isAuthenticated() && 
+                       (isOwner(resource.data.userId) || isAdmin());
+    }
+    
+    // ========== TABLES / ROOMS COLLECTION ==========
+    
+    match /tables/{tableId} {
+      // Чтение: все (для бронирования)
+      allow read: if true;
+      
+      // Создание: владелец чайханы, админ чайханы или супер-админ
+      allow create: if isAuthenticated() && 
+                       canManageChoyxona(request.resource.data.choyxonaId);
+      
+      // Обновление: владелец чайханы, админ чайханы или супер-админ
+      allow update: if isAuthenticated() && 
+                       canManageChoyxona(resource.data.choyxonaId);
+      
+      // Удаление: владелец чайханы, админ чайханы или супер-админ
+      allow delete: if isAuthenticated() && 
+                       canManageChoyxona(resource.data.choyxonaId);
+    }
+    
+    // ========== ROOMS COLLECTION ==========
+    
+    match /rooms/{roomId} {
+      // Чтение: все
+      allow read: if true;
+      
+      // Создание, обновление, удаление: управляющие чайханой
+      allow create: if isAuthenticated() && 
+                       canManageChoyxona(request.resource.data.choyxonaId);
+      allow update, delete: if isAuthenticated() && 
+                               canManageChoyxona(resource.data.choyxonaId);
+    }
+    
+    // ========== DISHES COLLECTION ==========
+    
+    match /dishes/{dishId} {
+      // Чтение: все
+      allow read: if true;
+      
+      // Создание: владелец чайханы, админ чайханы или супер-админ
+      allow create: if isAuthenticated() && 
+                       canManageChoyxona(request.resource.data.choyxonaId);
+      
+      // Обновление: владелец чайханы, админ чайханы или супер-админ
+      allow update: if isAuthenticated() && 
+                       canManageChoyxona(resource.data.choyxonaId);
+      
+      // Удаление: владелец чайханы, админ чайханы или супер-админ
+      allow delete: if isAuthenticated() && 
+                       canManageChoyxona(resource.data.choyxonaId);
+    }
+    
+    // ========== MENU_ITEMS COLLECTION ==========
+    
+    match /menu_items/{menuItemId} {
+      // Чтение: все
+      allow read: if true;
+      
+      // Создание, обновление, удаление: управляющие чайханой
+      allow create: if isAuthenticated() && 
+                       canManageChoyxona(request.resource.data.choyxonaId);
+      allow update, delete: if isAuthenticated() && 
+                               canManageChoyxona(resource.data.choyxonaId);
+    }
+    
+    // ========== PROMOTIONS COLLECTION ==========
+    
+    match /promotions/{promotionId} {
+      // Чтение: все
+      allow read: if true;
+      
+      // Создание, обновление, удаление: управляющие чайханой
+      allow create: if isAuthenticated() && 
+                       canManageChoyxona(request.resource.data.choyxonaId);
+      allow update, delete: if isAuthenticated() && 
+                               canManageChoyxona(resource.data.choyxonaId);
+    }
+    
+    // ========== SUBSCRIPTIONS COLLECTION ==========
+    
+    match /subscriptions/{subscriptionId} {
+      // Чтение: владелец подписки или админ
+      allow read: if isAuthenticated() && 
+                     (isOwner(resource.data.ownerId) || isAdmin());
+      
+      // Создание: владелец или админ
+      allow create: if isAuthenticated() && 
+                       (request.resource.data.ownerId == request.auth.uid || isAdmin());
+      
+      // Обновление: владелец или админ
+      allow update: if isAuthenticated() && 
+                       (isOwner(resource.data.ownerId) || isAdmin());
+      
+      // Удаление: только админ
+      allow delete: if isAdmin();
+    }
+    
+    // ========== NOTIFICATIONS COLLECTION ==========
+    
+    match /notifications/{notificationId} {
+      // Чтение: получатель или админ
+      allow read: if isAuthenticated() && 
+                     (isOwner(resource.data.userId) || isAdmin());
+      
+      // Создание: авторизованные пользователи
+      allow create: if isAuthenticated();
+      
+      // Обновление: получатель или админ
+      allow update: if isAuthenticated() && 
+                       (isOwner(resource.data.userId) || isAdmin());
+      
+      // Удаление: получатель или админ
+      allow delete: if isAuthenticated() && 
+                       (isOwner(resource.data.userId) || isAdmin());
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+    "flutter": {
+        "platforms": {
+            "android": {
+                "default": {
+                    "projectId": "choyxona-uz-app",
+                    "appId": "1:693886142798:android:3b070e6ab00d402196f61f",
+                    "fileOutput": "android/app/google-services.json"
+                }
+            },
+            "dart": {
+                "lib/firebase_options.dart": {
+                    "projectId": "choyxona-uz-app",
+                    "configurations": {
+                        "android": "1:693886142798:android:3b070e6ab00d402196f61f",
+                        "ios": "1:693886142798:ios:fbd36595c476f3eb96f61f",
+                        "macos": "1:693886142798:ios:fbd36595c476f3eb96f61f",
+                        "web": "1:693886142798:web:0c1fcc0a063ced0596f61f",
+                        "windows": "1:693886142798:web:7435c6c4991b810096f61f"
+                    }
+                }
+            }
+        }
+    },
+    "functions": [
+        {
+            "source": "functions",
+            "codebase": "default",
+            "ignore": [
+                "node_modules",
+                ".git",
+                "firebase-debug.log",
+                "firebase-debug.*.log"
+            ],
+            "predeploy": [
+                "npm --prefix \"$RESOURCE_DIR\" run build"
+            ]
+        }
+    ],
+    "firestore": {
+        "rules": "firestore.rules"
+    }
+}
