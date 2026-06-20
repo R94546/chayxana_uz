@@ -95,6 +95,17 @@ Ekranlar: menu_management, tables_management, choyxona_bookings, analytics, revi
 
 # QISM B — KELAJAK HOLAT (To-Be)
 
+## B.0 Tasdiqlangan qarorlar (locked)
+
+| # | Qaror | Tanlov |
+|---|---|---|
+| Q1 Til | Asosiy + fallback til | **uz** (uz/ru/en qo'llab-quvvatlanadi) |
+| Q2 Auth | Kirish usuli | **Email/parol VA Telefon+SMS** (ikkalasi) |
+| Q3 Xona tanlash | Kim biriktiradi | **User tanlaydi**, admin tasdiqlashda o'zgartira oladi |
+| Q4 Bandlik | Bron birligi | **Kun bo'yicha** — xona bir kunга bitta mijozga band |
+| Q5 To'lov | Onlayn to'lov | **Yo'q** (joyida naqd/karta, kassada admin hisoblaydi) |
+| Q6 Dizayn | Vizual yo'nalish | **Premium choyxona (issiq)** — choy/yashil/oltin, milliy urg'u |
+
 ## B.1 Rol modeli (birlashtirilgan)
 
 | Rol | Platforma | Huquqlar |
@@ -107,9 +118,9 @@ Ekranlar: menu_management, tables_management, choyxona_bookings, analytics, revi
 
 ## B.2 Xona-asosli bron mantiqi (sig'im = xonalar)
 
-**Tamoyil:** Har bron bitta **xonaga** bog'lanadi. Choyxonada `N` xona bo'lsa, bitta vaqt oralig'ida (date + timeSlot) maksimum `N` ta band bron bo'lishi mumkin.
+**Tamoyil:** Har bron bitta **xonaga** bog'lanadi. Choyxonada `N` xona bo'lsa, **bir kunda** maksimum `N` ta band bron bo'lishi mumkin (Q4: kun bo'yicha).
 
-**Bandlik qoidasi:** Xona `band` hisoblanadi, agar shu `roomId` uchun bir xil `bookingDate` va kesishuvchi vaqt oralig'ida `pending` yoki `confirmed` bron mavjud bo'lsa.
+**Bandlik qoidasi:** Xona o'sha `bookingDate` (kun) uchun `band` hisoblanadi, agar shu `roomId` + sana uchun `pending` yoki `confirmed` bron mavjud bo'lsa. Ya'ni bir xona bir kunга bitta mijozga biriktiriladi.
 
 **Sig'im moslashuvi:** Xona faqat `room.capacity >= guestCount` bo'lsa taklif qilinadi (30/15/10 kishilik).
 
@@ -337,16 +348,11 @@ Butun frontend yangi, zamonaviy dizayn tilida qayta quriladi. Ikki kontekst:
 
 ---
 
-## B.10 Ochiq savollar (tasdiqlashdan oldin)
+## B.10 Qarorlar holati
 
-- **Q1 — Til:** asosiy/fallback til **uz** bo'lsinmi (hozir ru)?
-- **Q2 — Auth turi:** email/parol qoladimi yoki **telefon+SMS** ga o'tamizmi (T1)?
-- **Q3 — Xona tanlash:** user xonani **o'zi tanlaydimi**, yoki faqat so'raydi va **admin biriktiradimi**? (TZ ikkalasini ham qo'llaydi — default qaysi?)
-- **Q4 — timeSlot:** bron **vaqt oralig'i** (ertalab/kechqurun) bo'yichami yoki **aniq soat** bo'yichami band qilinadi?
-- **Q5 — To'lov:** ilova ichida onlayn to'lov (Click/Payme) **shu bosqichda** kerakmi yoki keyinroqmi?
-- **Q6 — Redizayn yo'nalishi:** ranglar/uslub bo'yicha namuna (mood) bersangiz — moslashtiraman.
+Barcha ochiq savollarga javob berildi — qarorlar **B.0** bo'limida (locked). Qo'shimcha aniqlik kerak bo'lsa, ishlash jarayonida nuqtaviy savollar beriladi.
 
 ---
 
-> **Keyingi qadam:** ushbu TZ ni ko'rib chiqing. Ochiq savollarga (B.10) javob bering va tasdiqlang — so'ng **Faza 0** dan ishga kirishaman. Eslatma: bu sessiyada repoga **push huquqi yo'q** (403) — uni ham hal qilish kerak.
+> **Keyingi qadam:** TZ ni yakuniy tasdiqlang — so'ng **Faza 0** dan ishga kirishaman. Eslatma: bu sessiyada repoga **push huquqi yo'q** (403) — uni ham hal qilish kerak.
 </content>
