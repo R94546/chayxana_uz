@@ -56,7 +56,6 @@ class _RoleBasedNavigatorState extends State<RoleBasedNavigator> {
           screen = const SuperAdminDashboard();
           break;
         case UserRole.choyxonaAdmin:
-        case UserRole.choyxonaOwner:
           screen = const ChoyxonaAdminDashboard();
           break;
         default:
@@ -120,7 +119,6 @@ class PostLoginNavigator {
           screen = const SuperAdminDashboard();
           break;
         case UserRole.choyxonaAdmin:
-        case UserRole.choyxonaOwner:
           screen = const ChoyxonaAdminDashboard();
           break;
         default:

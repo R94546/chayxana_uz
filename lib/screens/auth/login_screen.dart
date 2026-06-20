@@ -69,7 +69,6 @@ class _LoginScreenState extends State<LoginScreen> {
           destination = const SuperAdminDashboard();
           break;
         case UserRole.choyxonaAdmin:
-        case UserRole.choyxonaOwner:
           destination = const ChoyxonaAdminDashboard();
           break;
         default:

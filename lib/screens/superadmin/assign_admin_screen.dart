@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:easy_localization/easy_localization.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../models/user_model.dart';
@@ -249,8 +248,7 @@ class _AssignAdminScreenState extends State<AssignAdminScreen> {
   }
 
   Widget _buildAdminTile(UserModel admin, bool isDark) {
-    final isOwner = admin.role == UserRole.choyxonaOwner;
-    final roleColor = isOwner ? Colors.orange : Colors.purple;
+    final roleColor = Colors.purple;
     
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -283,7 +281,7 @@ class _AssignAdminScreenState extends State<AssignAdminScreen> {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                isOwner ? 'Владелец' : 'Админ',
+                'Админ',
                 style: TextStyle(fontSize: 10, color: roleColor, fontWeight: FontWeight.bold),
               ),
             ),
@@ -315,10 +313,7 @@ class _AssignAdminScreenState extends State<AssignAdminScreen> {
     String currentRole = 'Клиент';
     Color roleColor = Colors.blue;
     
-    if (user.role == UserRole.choyxonaOwner) {
-      currentRole = 'Владелец (другой)';
-      roleColor = Colors.orange;
-    } else if (user.role == UserRole.choyxonaAdmin) {
+    if (user.role == UserRole.choyxonaAdmin) {
       currentRole = 'Админ (другой)';
       roleColor = Colors.purple;
     }
@@ -400,29 +395,6 @@ class _AssignAdminScreenState extends State<AssignAdminScreen> {
                 ],
               ),
             ),
-            PopupMenuItem(
-              value: UserRole.choyxonaOwner,
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Icon(Icons.store, color: Colors.orange, size: 18),
-                  ),
-                  const SizedBox(width: 12),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Владелец', style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text('Только просмотр', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
@@ -451,7 +423,7 @@ class _AssignAdminScreenState extends State<AssignAdminScreen> {
       });
 
       if (mounted) {
-        final roleName = role == UserRole.choyxonaAdmin ? 'администратором' : 'владельцем';
+        const roleName = 'администратором';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${user.fullName.isNotEmpty ? user.fullName : user.email} назначен $roleName'),

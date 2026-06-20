@@ -11,13 +11,10 @@ import '../auth/login_screen.dart';
 import '../owner/menu_management_screen.dart';
 import '../owner/tables_management_screen.dart';
 import 'choyxona_bookings_screen.dart';
-import 'choyxona_analytics_screen.dart';
 import 'choyxona_reviews_screen.dart';
 import '../owner/edit_choyxona_screen.dart'; // Import Edit Screen
-import '../../services/data_sync_provider.dart'; // Import Data Sync
 import '../promotions/promotion_editor_screen.dart';
 import '../reports/reports_screen.dart';
-import '../reports/cash_register_report_screen.dart';
 import 'combined_analytics_screen.dart';
 
 /// Dashboard для администраторов чайханы
@@ -209,8 +206,6 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
       );
     }
 
-    final isViewOnly = _user!.isViewOnly;
-
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -252,18 +247,14 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: isViewOnly
-                        ? Colors.orange.withOpacity(0.1)
-                        : Colors.purple.withOpacity(0.1),
+                    color: Colors.purple.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isViewOnly ? Colors.orange : Colors.purple,
-                    ),
+                    border: Border.all(color: Colors.purple),
                   ),
                   child: Text(
-                    isViewOnly ? 'view_only_mode'.tr() : 'admin_mode'.tr(),
-                    style: TextStyle(
-                      color: isViewOnly ? Colors.orange : Colors.purple,
+                    'admin_mode'.tr(),
+                    style: const TextStyle(
+                      color: Colors.purple,
                       fontWeight: FontWeight.bold,
                       fontSize: 12,
                     ),
@@ -287,7 +278,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _buildMenuGrid(context, isDark, isViewOnly),
+                _buildMenuGrid(context, isDark),
               ],
             ),
           ),
@@ -440,7 +431,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
     );
   }
 
-  Widget _buildMenuGrid(BuildContext context, bool isDark, bool isViewOnly) {
+  Widget _buildMenuGrid(BuildContext context, bool isDark) {
     final menuItems = [
       {
         'icon': Icons.calendar_today,
@@ -453,7 +444,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
           ),
         ),
       },
-      if (!isViewOnly) {
+      {
         'icon': Icons.restaurant_menu,
         'title': 'Меню',
         'color': AppColors.success,
@@ -467,7 +458,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
           ),
         ),
       },
-      if (!isViewOnly) {
+      {
         'icon': Icons.table_bar,
         'title': 'Xonalar',
         'color': AppColors.info,
@@ -503,7 +494,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
           ),
         ),
       },
-      if (!isViewOnly) {
+      {
         'icon': Icons.settings,
         'title': 'Инфо',
         'color': AppColors.getTextSecondary(isDark),
@@ -517,7 +508,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
           ),
         ).then((_) => _loadData()),
       },
-      if (!isViewOnly) {
+      {
         'icon': Icons.local_offer,
         'title': 'promotions'.tr(),
         'color': AppColors.warning,
@@ -530,7 +521,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
           ),
         ),
       },
-      if (!isViewOnly) {
+      {
         'icon': Icons.picture_as_pdf,
         'title': 'reports'.tr(),
         'color': Colors.red,

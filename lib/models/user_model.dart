@@ -5,7 +5,16 @@ class UserRole {
   static const String client = 'client';
   static const String superAdmin = 'superadmin';
   static const String choyxonaAdmin = 'choyxona_admin';
-  static const String choyxonaOwner = 'choyxona_owner';
+
+  /// Устаревшая роль — объединена с choyxonaAdmin (для миграции старых данных)
+  static const String legacyOwner = 'choyxona_owner';
+
+  /// Нормализовать роль: старая 'choyxona_owner' → 'choyxona_admin'
+  static String normalize(String? role) {
+    if (role == null) return client;
+    if (role == legacyOwner) return choyxonaAdmin;
+    return role;
+  }
 }
 
 /// Модель пользователя
@@ -60,13 +69,9 @@ class UserModel {
   bool get isClient => role == UserRole.client;
   bool get isSuperAdmin => role == UserRole.superAdmin;
   bool get isChoyxonaAdmin => role == UserRole.choyxonaAdmin;
-  bool get isChoyxonaOwner => role == UserRole.choyxonaOwner;
-  
-  /// Может управлять чайханой (admin или owner)
-  bool get canManageChoyxona => isChoyxonaAdmin || isChoyxonaOwner;
-  
-  /// Только просмотр (choyxona_owner)
-  bool get isViewOnly => isChoyxonaOwner;
+
+  /// Может управлять чайханой (единая роль администратора чайханы)
+  bool get canManageChoyxona => isChoyxonaAdmin;
 
   /// Создать из Firestore документа
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
@@ -79,7 +84,7 @@ class UserModel {
       firstName: data['firstName'] ?? '',
       lastName: data['lastName'] ?? '',
       photoUrl: data['photoUrl'] ?? '',
-      role: data['role'] ?? UserRole.client,
+      role: UserRole.normalize(data['role']),
       choyxonaId: data['choyxonaId'],
       assignedBy: data['assignedBy'],
       assignedAt: (data['assignedAt'] as Timestamp?)?.toDate(),
@@ -158,8 +163,6 @@ class UserModel {
         return 'Super Admin';
       case UserRole.choyxonaAdmin:
         return 'Администратор чайханы';
-      case UserRole.choyxonaOwner:
-        return 'Владелец чайханы';
       case UserRole.client:
       default:
         return 'Клиент';
