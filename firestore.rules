@@ -28,12 +28,7 @@ service cloud.firestore {
     function isClient() {
       return hasRole('client') || hasRole('user');
     }
-    
-    /// Проверка, что пользователь - владелец чайханы
-    function isChoyxonaOwner() {
-      return hasRole('owner');
-    }
-    
+
     /// Проверка, что пользователь - супер админ
     function isAdmin() {
       return hasRole('admin') || hasRole('superadmin');
@@ -82,10 +77,11 @@ service cloud.firestore {
       // Чтение: авторизованные пользователи
       allow read: if isAuthenticated();
       
-      // Создание: только при регистрации своего профиля
-      allow create: if isAuthenticated() && 
+      // Создание: только при регистрации своего профиля (только роль клиента)
+      // Роли choyxona_admin / superadmin назначаются супер-админом через update
+      allow create: if isAuthenticated() &&
                        request.auth.uid == userId &&
-                       request.resource.data.role in ['client', 'user', 'owner'];
+                       request.resource.data.role in ['client', 'user'];
       
       // Обновление: сам пользователь или админ
       allow update: if isAuthenticated() && 
@@ -101,10 +97,8 @@ service cloud.firestore {
       // Чтение: все (публичные данные)
       allow read: if true;
       
-      // Создание: владельцы и админы
-      allow create: if isAuthenticated() && 
-                       (isChoyxonaOwner() || isAdmin()) &&
-                       request.resource.data.ownerId == request.auth.uid;
+      // Создание: только супер-админ (он создаёт чайхану и назначает админа)
+      allow create: if isAuthenticated() && isAdmin();
       
       // Обновление: владелец чайханы, админ чайханы (привязанный) или супер-админ
       // ЭТО КЛЮЧЕВОЕ ИЗМЕНЕНИЕ - разрешаем choyxona_admin обновлять свою чайхану
