@@ -319,8 +319,28 @@ service cloud.firestore {
                        (isOwner(resource.data.userId) || isAdmin());
       
       // Удаление: получатель или админ
-      allow delete: if isAuthenticated() && 
+      allow delete: if isAuthenticated() &&
                        (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    // ========== ROOM_LOCKS COLLECTION (занятость комнат по дням) ==========
+    // Документ-замок: id = "{roomId}_{bookingDate}" гарантирует, что комната
+    // забронирована не более одного раза в день (вместимость = кол-во комнат).
+
+    match /room_locks/{lockId} {
+      // Чтение: все (нужно для отображения свободных/занятых комнат)
+      allow read: if true;
+
+      // Создание: авторизованные пользователи (клиент при бронировании, в транзакции)
+      allow create: if isAuthenticated() &&
+                       request.resource.data.roomId is string &&
+                       request.resource.data.choyxonaId is string &&
+                       request.resource.data.bookingDate is string;
+
+      // Обновление/удаление: управляющие чайханой или супер-админ
+      // (освобождение замка при отмене делает Cloud Function через admin SDK)
+      allow update, delete: if isAuthenticated() &&
+                               hasChoyxonaAccess(resource.data.choyxonaId);
     }
   }
 }

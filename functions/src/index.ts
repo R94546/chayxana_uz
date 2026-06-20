@@ -3,7 +3,10 @@
  */
 
 import * as admin from "firebase-admin";
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import {
+    onDocumentCreated,
+    onDocumentUpdated,
+} from "firebase-functions/v2/firestore";
 
 admin.initializeApp();
 
@@ -158,6 +161,58 @@ export const onBookingCreated = onDocumentCreated(
             console.log(`Created notification for owner ${ownerId}`);
         } catch (error) {
             console.error("Error in onBookingCreated:", error);
+        }
+    }
+);
+
+/**
+ * При изменении брони:
+ *  - status -> cancelled: освобождаем замок комнаты (room_locks)
+ *  - status pending -> confirmed: уведомляем клиента
+ */
+export const onBookingStatusChanged = onDocumentUpdated(
+    "bookings/{bookingId}",
+    async (event) => {
+        const before = event.data?.before.data();
+        const after = event.data?.after.data();
+        if (!before || !after) return;
+
+        if (before.status === after.status) return; // статус не менялся
+
+        const roomId = after.roomId as string | undefined;
+        const bookingDate = after.bookingDate as string | undefined;
+
+        try {
+            // Освобождаем замок комнаты при отмене
+            if (after.status === "cancelled" && roomId && bookingDate) {
+                await db
+                    .collection("room_locks")
+                    .doc(`${roomId}_${bookingDate}`)
+                    .delete()
+                    .catch(() => undefined);
+                console.log(`Released room lock ${roomId}_${bookingDate}`);
+            }
+
+            // Уведомляем клиента о подтверждении
+            if (before.status === "pending" && after.status === "confirmed") {
+                const userId = after.userId as string;
+                if (userId) {
+                    await db.collection("notifications").add({
+                        userId: userId,
+                        title: "Bron tasdiqlandi! ✅",
+                        body: `${after.choyxonaName || "Choyxona"}dagi broningiz tasdiqlandi.`,
+                        data: {
+                            type: "booking_confirmed",
+                            bookingId: event.params.bookingId,
+                        },
+                        isRead: false,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                    console.log(`Confirmation notification sent to ${userId}`);
+                }
+            }
+        } catch (error) {
+            console.error("Error in onBookingStatusChanged:", error);
         }
     }
 );

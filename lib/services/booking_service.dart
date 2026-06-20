@@ -6,38 +6,84 @@ import '../core/utils/error_handler.dart';
 class BookingService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Создать новое бронирование
+  /// Идентификатор замка комнаты на день (одна комната = один день = одно бронирование)
+  String _roomLockId(String roomId, String bookingDate) => '${roomId}_$bookingDate';
+
+  /// Создать новое бронирование (атомарно, с проверкой занятости комнаты по дню)
+  ///
+  /// Логика вместимости: вместимость чайханы = количество комнат.
+  /// Комната занята на день, если для неё уже есть активная (pending/confirmed)
+  /// бронь на эту дату. Атомарность обеспечивается детерминированным документом
+  /// замка `room_locks/{roomId}_{bookingDate}` (в транзакции нельзя делать запросы).
   Future<String?> createBooking(BookingModel booking) async {
+    // Валидация
+    final validationError = BookingModel.validateBooking(
+      bookingDate: booking.bookingDate,
+      bookingTime: booking.bookingTime,
+      guestCount: booking.guestCount,
+      guestName: booking.guestName,
+      guestPhone: booking.guestPhone,
+    );
+    if (validationError != null) {
+      return validationError;
+    }
+
+    final hasRoom = booking.roomId != null && booking.roomId!.isNotEmpty;
+
     try {
-      // Валидация
-      final validationError = BookingModel.validateBooking(
-        bookingDate: booking.bookingDate,
-        bookingTime: booking.bookingTime,
-        guestCount: booking.guestCount,
-        guestName: booking.guestName,
-        guestPhone: booking.guestPhone,
-      );
+      return await _firestore.runTransaction<String?>((tx) async {
+        // Проверка занятости комнаты (если комната выбрана)
+        if (hasRoom) {
+          final lockRef = _firestore
+              .collection('room_locks')
+              .doc(_roomLockId(booking.roomId!, booking.bookingDate));
+          final lockSnap = await tx.get(lockRef);
+          if (lockSnap.exists) {
+            return 'Bu xona tanlangan kunga allaqachon band. Iltimos, boshqa xona yoki sana tanlang.';
+          }
+          // Ставим замок
+          tx.set(lockRef, {
+            'roomId': booking.roomId,
+            'choyxonaId': booking.choyxonaId,
+            'bookingDate': booking.bookingDate,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
 
-      if (validationError != null) {
-        return validationError;
-      }
+        // Создаём бронь
+        final bookingRef = _firestore.collection('bookings').doc();
+        tx.set(bookingRef, booking.toMap());
 
-      // Создаём документ
-      await _firestore.collection('bookings').add(booking.toMap());
+        // Счётчики
+        tx.update(_firestore.collection('users').doc(booking.userId), {
+          'totalBookings': FieldValue.increment(1),
+        });
+        tx.update(_firestore.collection('choyxonas').doc(booking.choyxonaId), {
+          'bookingCount': FieldValue.increment(1),
+        });
 
-      // Обновляем счётчик бронирований у пользователя
-      await _firestore.collection('users').doc(booking.userId).update({
-        'totalBookings': FieldValue.increment(1),
+        return null; // Успех
       });
-
-      // Обновляем счётчик бронирований у чайханы
-      await _firestore.collection('choyxonas').doc(booking.choyxonaId).update({
-        'bookingCount': FieldValue.increment(1),
-      });
-
-      return null; // Успех
     } catch (e, stackTrace) {
       return ErrorHandler.getUserMessage(e, stackTrace: stackTrace);
+    }
+  }
+
+  /// Получить занятые комнаты (id) на конкретную дату для чайханы
+  Future<Set<String>> getOccupiedRoomIds(String choyxonaId, String bookingDate) async {
+    try {
+      final snapshot = await _firestore
+          .collection('room_locks')
+          .where('choyxonaId', isEqualTo: choyxonaId)
+          .where('bookingDate', isEqualTo: bookingDate)
+          .get();
+      return snapshot.docs
+          .map((d) => (d.data()['roomId'] as String?) ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+    } catch (e, stackTrace) {
+      ErrorHandler.logError(e, stackTrace);
+      return {};
     }
   }
 
@@ -164,7 +210,10 @@ class BookingService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Если был назначен стол, освобождаем его
+      // Замок комнаты (room_locks) освобождается Cloud Function onBookingStatusChanged
+      // при переходе брони в статус cancelled — клиенту не нужны права на удаление.
+
+      // Если был назначен стол, освобождаем его (устаревшее)
       if (booking.tableId != null) {
         await _firestore.collection('tables').doc(booking.tableId).update({
           'status': 'free',
@@ -232,24 +281,40 @@ class BookingService {
             snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList());
   }
 
-  /// Проверить доступность на дату и время
-  Future<bool> checkAvailability({
+  /// Проверить, есть ли свободные комнаты в чайхане на дату (вместимость = кол-во комнат)
+  Future<bool> hasAvailabilityOnDate({
     required String choyxonaId,
     required String bookingDate,
-    required String bookingTime,
   }) async {
     try {
-      final snapshot = await _firestore
-          .collection('bookings')
+      final roomsSnap = await _firestore
+          .collection('rooms')
           .where('choyxonaId', isEqualTo: choyxonaId)
-          .where('bookingDate', isEqualTo: bookingDate)
-          .where('bookingTime', isEqualTo: bookingTime)
-          .where('status', whereIn: ['pending', 'confirmed'])
           .get();
+      final totalRooms = roomsSnap.docs
+          .where((d) => (d.data()['status'] ?? 'free') != 'unavailable')
+          .length;
+      if (totalRooms == 0) return false;
 
-      // Если есть бронирования на это время, проверяем количество
-      // TODO: Добавить проверку вместимости чайханы
-      return snapshot.docs.length < 10; // Временное ограничение
+      final occupied = await getOccupiedRoomIds(choyxonaId, bookingDate);
+      return occupied.length < totalRooms;
+    } catch (e, stackTrace) {
+      ErrorHandler.logError(e, stackTrace);
+      return false;
+    }
+  }
+
+  /// Проверить, свободна ли конкретная комната на дату
+  Future<bool> isRoomAvailable({
+    required String roomId,
+    required String bookingDate,
+  }) async {
+    try {
+      final lock = await _firestore
+          .collection('room_locks')
+          .doc(_roomLockId(roomId, bookingDate))
+          .get();
+      return !lock.exists;
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
       return false;
