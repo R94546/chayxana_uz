@@ -608,5 +608,13 @@
   "cuisine_european": "Европейская",
   "cuisine_mixed": "Смешанное меню",
   "new_badge": "Новое",
-  "filters_applied": "Фильтры применены"
+  "filters_applied": "Фильтры применены",
+  "active_booking_today": "БРОНЬ НА СЕГОДНЯ",
+  "active_booking_confirmed_hint": "Бронь подтверждена — можете приходить",
+  "active_booking_pending_hint": "Ожидайте подтверждения администратора",
+  "booking_status_confirmed": "Подтверждено",
+  "booking_status_pending": "Ожидание",
+  "guests_short": "чел.",
+  "room": "Комната",
+  "choyxona": "Чайхана"
 }

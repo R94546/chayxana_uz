@@ -539,5 +539,13 @@
   "cuisine_european": "European",
   "cuisine_mixed": "Mixed menu",
   "new_badge": "New",
-  "filters_applied": "Filters applied"
+  "filters_applied": "Filters applied",
+  "active_booking_today": "TODAY'S BOOKING",
+  "active_booking_confirmed_hint": "Booking confirmed — you may come",
+  "active_booking_pending_hint": "Waiting for admin confirmation",
+  "booking_status_confirmed": "Confirmed",
+  "booking_status_pending": "Pending",
+  "guests_short": "guests",
+  "room": "Room",
+  "choyxona": "Choyxona"
 }

@@ -22,7 +22,7 @@ void main() async {
   // Настройка background handler для FCM
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-  await initializeDateFormatting('ru', null);
+  await initializeDateFormatting('uz', null);
 
   // Инициализация easy_localization
   await EasyLocalization.ensureInitialized();
@@ -39,9 +39,10 @@ void main() async {
 
   runApp(
     EasyLocalization(
-      supportedLocales: const [Locale('ru'), Locale('uz'), Locale('en')],
+      supportedLocales: const [Locale('uz'), Locale('ru'), Locale('en')],
       path: 'assets/translations',
-      fallbackLocale: const Locale('ru'),
+      startLocale: const Locale('uz'),
+      fallbackLocale: const Locale('uz'),
       child: MyApp(dataSyncProvider: dataSyncProvider),
     ),
   );

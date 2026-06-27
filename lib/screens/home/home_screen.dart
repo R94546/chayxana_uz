@@ -12,6 +12,7 @@ import '../../models/choyxona_model.dart';
 import 'widgets/glassmorphic_search_bar.dart';
 import 'widgets/category_cards.dart';
 import 'widgets/choyxona_card.dart';
+import 'widgets/active_booking_banner.dart';
 import '../choyxona_details/choyxona_details_screen.dart';
 import '../notifications/notifications_list_screen.dart';
 import '../search/search_screen.dart';
@@ -159,6 +160,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // 2. Title
               SliverToBoxAdapter(child: _buildTitle(isDark)),
+
+              // 2.5 Bugungi aktiv bron banneri (TZ §0.7)
+              const SliverToBoxAdapter(child: ActiveBookingBanner()),
 
               // 3. Search Bar
               SliverToBoxAdapter(
