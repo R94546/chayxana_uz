@@ -9,7 +9,7 @@ import '../../services/auth_service.dart';
 import '../../models/user_model.dart';
 import '../auth/login_screen.dart';
 import '../owner/menu_management_screen.dart';
-import '../owner/tables_management_screen.dart';
+import 'rooms_management_screen.dart';
 import 'choyxona_bookings_screen.dart';
 import 'choyxona_reviews_screen.dart';
 import '../owner/edit_choyxona_screen.dart'; // Import Edit Screen
@@ -459,13 +459,13 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
         ),
       },
       {
-        'icon': Icons.table_bar,
-        'title': 'Xonalar',
+        'icon': Icons.meeting_room,
+        'title': 'rooms_management'.tr(),
         'color': AppColors.info,
         'onTap': () => Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => TablesManagementScreen(choyxonaId: _user!.choyxonaId!),
+            builder: (_) => RoomsManagementScreen(choyxonaId: _user!.choyxonaId!),
           ),
         ),
       },
