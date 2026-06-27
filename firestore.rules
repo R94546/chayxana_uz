@@ -125,20 +125,33 @@ service cloud.firestore {
     
     // ========== BOOKINGS COLLECTION ==========
     
+    // Клиент НЕ может сам подтверждать/оплачивать бронь или назначать комнату.
+    // Разрешено клиенту: отмена, авто-завершение прошедших, hasOrder/isRated.
+    // Подтверждение и назначение комнаты — только админ чайханы (hasChoyxonaAccess).
+    function clientBookingUpdateOk() {
+      return request.resource.data.paymentStatus == resource.data.paymentStatus &&
+             request.resource.data.roomId == resource.data.roomId &&
+             (request.resource.data.status == resource.data.status ||
+              request.resource.data.status == 'cancelled' ||
+              request.resource.data.status == 'completed');
+    }
+
     match /bookings/{bookingId} {
       // Чтение: создатель бронирования, админ чайханы или супер-админ
-      allow read: if isAuthenticated() && 
-                     (isOwner(resource.data.userId) || 
+      allow read: if isAuthenticated() &&
+                     (isOwner(resource.data.userId) ||
                       hasChoyxonaAccess(resource.data.choyxonaId));
-      
-      // Создание: авторизованные пользователи
-      allow create: if isAuthenticated() && 
-                       request.resource.data.userId == request.auth.uid;
-      
-      // Обновление: создатель, админ чайханы или супер-админ
-      allow update: if isAuthenticated() && 
-                       (isOwner(resource.data.userId) ||
-                        hasChoyxonaAccess(resource.data.choyxonaId));
+
+      // Создание: только своя бронь и только со статусом pending
+      // (нельзя самоподтвердиться или создать оплаченную бронь)
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.status == 'pending';
+
+      // Обновление: админ чайханы — полностью; создатель — ограниченно
+      allow update: if isAuthenticated() &&
+                       (hasChoyxonaAccess(resource.data.choyxonaId) ||
+                        (isOwner(resource.data.userId) && clientBookingUpdateOk()));
       
       // Удаление: создатель (для completed/cancelled), админ чайханы или супер-админ
       allow delete: if isAuthenticated() && 

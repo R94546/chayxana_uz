@@ -54,13 +54,9 @@ class BookingService {
         final bookingRef = _firestore.collection('bookings').doc();
         tx.set(bookingRef, booking.toMap());
 
-        // Счётчики
-        tx.update(_firestore.collection('users').doc(booking.userId), {
-          'totalBookings': FieldValue.increment(1),
-        });
-        tx.update(_firestore.collection('choyxonas').doc(booking.choyxonaId), {
-          'bookingCount': FieldValue.increment(1),
-        });
+        // Счётчики (totalBookings / bookingCount) инкрементирует Cloud Function
+        // onBookingCreated через admin SDK — клиент не имеет прав на choyxonas.update,
+        // иначе вся транзакция была бы отклонена правилами.
 
         return null; // Успех
       });

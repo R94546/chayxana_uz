@@ -137,6 +137,22 @@ export const onBookingCreated = onDocumentCreated(
 
         if (status !== "pending") return;
 
+        // Денормализованные счётчики (admin SDK обходит правила; клиент не имеет
+        // прав на choyxonas.update, поэтому инкремент перенесён сюда из транзакции).
+        try {
+            await db.collection("choyxonas").doc(choyxonaId).update({
+                bookingCount: admin.firestore.FieldValue.increment(1),
+            });
+            const userId = booking.userId as string | undefined;
+            if (userId) {
+                await db.collection("users").doc(userId).update({
+                    totalBookings: admin.firestore.FieldValue.increment(1),
+                });
+            }
+        } catch (error) {
+            console.error("Error incrementing booking counters:", error);
+        }
+
         try {
             const choyxonaDoc = await db.collection("choyxonas").doc(choyxonaId).get();
             if (!choyxonaDoc.exists) return;
