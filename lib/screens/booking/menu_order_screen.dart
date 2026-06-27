@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/dish_model.dart';
-import '../../models/order_model.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../services/auth_service.dart';
-import '../../services/push_notification_service.dart';
 
 /// Экран заказа еды (после подтверждения брони)
 class MenuOrderScreen extends StatefulWidget {
@@ -486,9 +484,7 @@ class _MenuOrderScreenState extends State<MenuOrderScreen> {
           .doc(widget.bookingId)
           .update({'hasOrder': true});
 
-      // Notify admin in background (fire and forget)
-      final userName = currentUser.fullName.isNotEmpty ? currentUser.fullName : 'Mijoz';
-      _notifyAdmin(userName);
+      // Adminlarga xabar onOrderCreated Cloud Function orqali (server-side).
 
       if (mounted) {
         _showSuccess('Buyurtma qabul qilindi! 🎉');
@@ -500,30 +496,6 @@ class _MenuOrderScreenState extends State<MenuOrderScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
       }
-    }
-  }
-
-  Future<void> _notifyAdmin(String userName) async {
-    try {
-      final adminsSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .where('choyxonaId', isEqualTo: widget.choyxonaId)
-          .where('role', whereIn: ['choyxona_admin', 'choyxona_owner'])
-          .get();
-
-      for (var adminDoc in adminsSnapshot.docs) {
-        await PushNotificationService().sendNotificationToUser(
-          userId: adminDoc.id,
-          title: 'Yangi taom buyurtmasi! 🍽️',
-          body: '$userName ${_formatPrice(_totalAmount)} miqdorda buyurtma berdi ($_globalDeliveryTime ga)',
-          data: {
-            'type': 'new_order',
-            'bookingId': widget.bookingId,
-          },
-        );
-      }
-    } catch (e) {
-      debugPrint('Error notifying admin: $e');
     }
   }
 

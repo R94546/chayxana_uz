@@ -74,8 +74,12 @@ service cloud.firestore {
     // ========== USERS COLLECTION ==========
     
     match /users/{userId} {
-      // Чтение: авторизованные пользователи
-      allow read: if isAuthenticated();
+      // Чтение: сам пользователь, супер-админ или админ чайханы.
+      // (раньше любой авторизованный мог читать ВСЕ профили — телефон, email,
+      //  deviceTokens. Клиентам чужие профили больше не нужны: рассылка
+      //  уведомлений перенесена на сервер.)
+      allow read: if isAuthenticated() &&
+                     (request.auth.uid == userId || isAdmin() || isChoyxonaAdmin());
       
       // Создание: только при регистрации своего профиля (только роль клиента)
       // Роли choyxona_admin / superadmin назначаются супер-админом через update
@@ -323,11 +327,12 @@ service cloud.firestore {
     
     match /notifications/{notificationId} {
       // Чтение: получатель или админ
-      allow read: if isAuthenticated() && 
+      allow read: if isAuthenticated() &&
                      (isOwner(resource.data.userId) || isAdmin());
-      
-      // Создание: авторизованные пользователи
-      allow create: if isAuthenticated();
+
+      // Создание: ТОЛЬКО сервер (Cloud Functions через Admin SDK).
+      // Клиент не может слать/подделывать пуш-уведомления другим пользователям.
+      allow create: if false;
       
       // Обновление: получатель или админ
       allow update: if isAuthenticated() && 
@@ -346,11 +351,15 @@ service cloud.firestore {
       // Чтение: все (нужно для отображения свободных/занятых комнат)
       allow read: if true;
 
-      // Создание: авторизованные пользователи (клиент при бронировании, в транзакции)
+      // Создание: ТОЛЬКО управляющий этой чайханой (для назначения комнаты
+      // админом). Клиентские брони создаются callable-функцией createBooking
+      // через Admin SDK (обходит правила), поэтому клиент НЕ может подделать
+      // замок и заблокировать чужие комнаты (защита от DoS).
       allow create: if isAuthenticated() &&
                        request.resource.data.roomId is string &&
                        request.resource.data.choyxonaId is string &&
-                       request.resource.data.bookingDate is string;
+                       request.resource.data.bookingDate is string &&
+                       canManageChoyxona(request.resource.data.choyxonaId);
 
       // Обновление/удаление: управляющие чайханой или супер-админ
       // (освобождение замка при отмене делает Cloud Function через admin SDK)

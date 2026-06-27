@@ -6,7 +6,6 @@ import '../../core/design/choy_components.dart';
 import '../../core/design/choy_tokens.dart';
 import '../../models/room_model.dart';
 import '../../services/booking_service.dart';
-import '../../services/push_notification_service.dart';
 import 'admin_add_order_screen.dart';
 
 /// 🍵 Admin — bronlar (tasdiqlash + xona biriktirish), Faza 4 redizayn.
@@ -149,7 +148,7 @@ class _ChoyxonaBookingsScreenState extends State<ChoyxonaBookingsScreen>
     if (hasRoom) {
       final err = await _service.confirmBooking(id);
       if (err != null) return _snack(err, error: true);
-      await _notify(data, 'confirmed', roomNumber: data['roomNumber']);
+      // Mijozga xabar onBookingStatusChanged CF orqali (server-side) yuboriladi.
       _snack('booking_confirmed_msg'.tr());
       return;
     }
@@ -164,7 +163,6 @@ class _ChoyxonaBookingsScreenState extends State<ChoyxonaBookingsScreen>
       bookingDate: data['bookingDate'] as String? ?? '',
     );
     if (err != null) return _snack(err, error: true);
-    await _notify(data, 'confirmed', roomNumber: room.number);
     _snack('booking_confirmed_msg'.tr());
   }
 
@@ -247,14 +245,12 @@ class _ChoyxonaBookingsScreenState extends State<ChoyxonaBookingsScreen>
     final err = await _service.updateBookingStatus(
         bookingId: id, status: 'cancelled');
     if (err != null) return _snack(err, error: true);
-    await _notify(data, 'cancelled');
     _snack('booking_rejected_msg'.tr());
   }
 
   Future<void> _onComplete(String id, Map<String, dynamic> data) async {
     final err = await _service.completeBooking(id);
     if (err != null) return _snack(err, error: true);
-    await _notify(data, 'completed');
     _snack('booking_completed_msg'.tr());
   }
 
@@ -270,40 +266,6 @@ class _ChoyxonaBookingsScreenState extends State<ChoyxonaBookingsScreen>
         ),
       ),
     );
-  }
-
-  Future<void> _notify(Map<String, dynamic> data, String status,
-      {String? roomNumber}) async {
-    final userId = data['userId'] as String?;
-    if (userId == null || userId.isEmpty) return;
-    final date = data['bookingDate'] ?? '';
-    String title, body;
-    switch (status) {
-      case 'confirmed':
-        title = '${'booking_confirmed_push_title'.tr()} ✅';
-        body = roomNumber != null && roomNumber.isNotEmpty
-            ? '$date · ${'room'.tr()} $roomNumber'
-            : '$date';
-        break;
-      case 'cancelled':
-        title = '${'booking_rejected_push_title'.tr()} ❌';
-        body = '$date';
-        break;
-      case 'completed':
-        title = '${'booking_completed_push_title'.tr()} 🎉';
-        body = 'thanks_for_visit'.tr();
-        break;
-      default:
-        return;
-    }
-    try {
-      await PushNotificationService().sendNotificationToUser(
-        userId: userId,
-        title: title,
-        body: body,
-        data: {'type': 'booking_status_update', 'status': status},
-      );
-    } catch (_) {}
   }
 
   void _snack(String msg, {bool error = false}) {

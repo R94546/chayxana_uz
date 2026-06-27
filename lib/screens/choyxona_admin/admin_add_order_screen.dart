@@ -4,7 +4,6 @@ import '../../models/dish_model.dart';
 import '../../models/order_model.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
-import '../../services/push_notification_service.dart';
 
 /// Admin ekrani - mijoz uchun taom buyurtma qo'shish
 class AdminAddOrderScreen extends StatefulWidget {
@@ -321,16 +320,7 @@ class _AdminAddOrderScreenState extends State<AdminAddOrderScreen> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Mijozga notification
-      await PushNotificationService().sendNotificationToUser(
-        userId: widget.userId,
-        title: 'Taom buyurtmasi qo\'shildi! 🍽️',
-        body: 'Admin sizga ${_cart.length} ta taom qo\'shdi. Jami: ${_formatPrice(_totalAmount)}',
-        data: {
-          'type': 'order_added',
-          'bookingId': widget.bookingId,
-        },
-      );
+      // Mijozga xabar onOrderCreated Cloud Function orqali (server-side).
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

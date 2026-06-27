@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/booking_model.dart';
 import '../core/utils/error_handler.dart';
 
@@ -9,14 +10,14 @@ class BookingService {
   /// Идентификатор замка комнаты на день (одна комната = один день = одно бронирование)
   String _roomLockId(String roomId, String bookingDate) => '${roomId}_$bookingDate';
 
-  /// Создать новое бронирование (атомарно, с проверкой занятости комнаты по дню)
+  /// Создать новое бронирование через server-authoritative callable-функцию.
   ///
-  /// Логика вместимости: вместимость чайханы = количество комнат.
-  /// Комната занята на день, если для неё уже есть активная (pending/confirmed)
-  /// бронь на эту дату. Атомарность обеспечивается детерминированным документом
-  /// замка `room_locks/{roomId}_{bookingDate}` (в транзакции нельзя делать запросы).
+  /// Замок комнаты (room_locks) и документ брони создаются на сервере (Admin SDK)
+  /// в транзакции — клиент не пишет в room_locks напрямую, что исключает подделку
+  /// замков и блокировку чужих комнат (DoS). userId выставляется сервером из
+  /// контекста аутентификации. Возвращает null при успехе или текст ошибки.
   Future<String?> createBooking(BookingModel booking) async {
-    // Валидация
+    // Локальная валидация — быстрая обратная связь (сервер валидирует повторно)
     final validationError = BookingModel.validateBooking(
       bookingDate: booking.bookingDate,
       bookingTime: booking.bookingTime,
@@ -28,38 +29,26 @@ class BookingService {
       return validationError;
     }
 
-    final hasRoom = booking.roomId != null && booking.roomId!.isNotEmpty;
-
     try {
-      return await _firestore.runTransaction<String?>((tx) async {
-        // Проверка занятости комнаты (если комната выбрана)
-        if (hasRoom) {
-          final lockRef = _firestore
-              .collection('room_locks')
-              .doc(_roomLockId(booking.roomId!, booking.bookingDate));
-          final lockSnap = await tx.get(lockRef);
-          if (lockSnap.exists) {
-            return 'Bu xona tanlangan kunga allaqachon band. Iltimos, boshqa xona yoki sana tanlang.';
-          }
-          // Ставим замок
-          tx.set(lockRef, {
-            'roomId': booking.roomId,
-            'choyxonaId': booking.choyxonaId,
-            'bookingDate': booking.bookingDate,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-        }
-
-        // Создаём бронь
-        final bookingRef = _firestore.collection('bookings').doc();
-        tx.set(bookingRef, booking.toMap());
-
-        // Счётчики (totalBookings / bookingCount) инкрементирует Cloud Function
-        // onBookingCreated через admin SDK — клиент не имеет прав на choyxonas.update,
-        // иначе вся транзакция была бы отклонена правилами.
-
-        return null; // Успех
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('createBooking');
+      await callable.call(<String, dynamic>{
+        'choyxonaId': booking.choyxonaId,
+        'choyxonaName': booking.choyxonaName,
+        'bookingDate': booking.bookingDate,
+        'timeSlot': booking.timeSlot,
+        'duration': booking.duration,
+        'guestCount': booking.guestCount,
+        'guestName': booking.guestName,
+        'guestPhone': booking.guestPhone,
+        'guestEmail': booking.guestEmail,
+        'specialRequests': booking.specialRequests,
+        'roomId': booking.roomId,
+        'roomNumber': booking.roomNumber,
       });
+      return null; // Успех
+    } on FirebaseFunctionsException catch (e) {
+      return e.message ?? 'Bron yaratishda xatolik';
     } catch (e, stackTrace) {
       return ErrorHandler.getUserMessage(e, stackTrace: stackTrace);
     }
