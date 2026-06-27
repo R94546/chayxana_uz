@@ -153,6 +153,58 @@ class BookingService {
     }
   }
 
+  /// Подтвердить бронь, у которой комната уже выбрана пользователем
+  /// (замок room_locks уже стоит — просто меняем статус на confirmed).
+  Future<String?> confirmBooking(String bookingId) async {
+    try {
+      await _firestore.collection('bookings').doc(bookingId).update({
+        'status': 'confirmed',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return null;
+    } catch (e, stackTrace) {
+      return ErrorHandler.getUserMessage(e, stackTrace: stackTrace);
+    }
+  }
+
+  /// Подтвердить бронь и атомарно назначить комнату (для брони без комнаты —
+  /// «пусть выберет админ»). Ставит замок room_locks на день, чтобы вместимость
+  /// не нарушалась, и обновляет бронь (roomId/roomNumber + status=confirmed).
+  Future<String?> assignRoomAndConfirm({
+    required String bookingId,
+    required String roomId,
+    required String roomNumber,
+    required String choyxonaId,
+    required String bookingDate,
+  }) async {
+    try {
+      return await _firestore.runTransaction<String?>((tx) async {
+        final lockRef = _firestore
+            .collection('room_locks')
+            .doc(_roomLockId(roomId, bookingDate));
+        final lockSnap = await tx.get(lockRef);
+        if (lockSnap.exists) {
+          return 'Bu xona tanlangan kunga allaqachon band. Boshqa xona tanlang.';
+        }
+        tx.set(lockRef, {
+          'roomId': roomId,
+          'choyxonaId': choyxonaId,
+          'bookingDate': bookingDate,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        tx.update(_firestore.collection('bookings').doc(bookingId), {
+          'roomId': roomId,
+          'roomNumber': roomNumber,
+          'status': 'confirmed',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return null;
+      });
+    } catch (e, stackTrace) {
+      return ErrorHandler.getUserMessage(e, stackTrace: stackTrace);
+    }
+  }
+
   /// Обновить статус бронирования
   Future<String?> updateBookingStatus({
     required String bookingId,
