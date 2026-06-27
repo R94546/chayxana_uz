@@ -168,11 +168,13 @@ service cloud.firestore {
                       hasChoyxonaAccess(resource.data.choyxonaId) ||
                       isOwner(resource.data.waiterId));
       
-      // Создание: авторизованные пользователи
-      allow create: if isAuthenticated();
-      
+      // Создание: свой заказ (клиент) либо управляющий этой чайханой
+      allow create: if isAuthenticated() &&
+                       (request.resource.data.userId == request.auth.uid ||
+                        canManageChoyxona(request.resource.data.choyxonaId));
+
       // Обновление: владелец чайханы, официант, админ чайханы или супер-админ
-      allow update: if isAuthenticated() && 
+      allow update: if isAuthenticated() &&
                        (hasChoyxonaAccess(resource.data.choyxonaId) ||
                         isOwner(resource.data.waiterId));
       

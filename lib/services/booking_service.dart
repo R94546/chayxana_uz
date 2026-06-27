@@ -84,15 +84,19 @@ class BookingService {
   }
 
   /// Получить все бронирования пользователя
+  /// (orderBy убран — сортируем на клиенте, чтобы не требовать составной индекс)
   Future<List<BookingModel>> getBookingsByUser(String userId) async {
     try {
       final snapshot = await _firestore
           .collection('bookings')
           .where('userId', isEqualTo: userId)
-          .orderBy('createdAt', descending: true)
           .get();
 
-      return snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList();
+      final list = snapshot.docs
+          .map((doc) => BookingModel.fromFirestore(doc))
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return list;
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
       return [];
@@ -106,10 +110,13 @@ class BookingService {
           .collection('bookings')
           .where('userId', isEqualTo: userId)
           .where('status', whereIn: ['pending', 'confirmed'])
-          .orderBy('bookingDate')
           .get();
 
-      return snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList();
+      final list = snapshot.docs
+          .map((doc) => BookingModel.fromFirestore(doc))
+          .toList()
+        ..sort((a, b) => a.bookingDate.compareTo(b.bookingDate));
+      return list;
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
       return [];
@@ -122,10 +129,13 @@ class BookingService {
       final snapshot = await _firestore
           .collection('bookings')
           .where('choyxonaId', isEqualTo: choyxonaId)
-          .orderBy('bookingDate', descending: true)
           .get();
 
-      return snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList();
+      final list = snapshot.docs
+          .map((doc) => BookingModel.fromFirestore(doc))
+          .toList()
+        ..sort((a, b) => b.bookingDate.compareTo(a.bookingDate));
+      return list;
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
       return [];
@@ -139,10 +149,13 @@ class BookingService {
           .collection('bookings')
           .where('choyxonaId', isEqualTo: choyxonaId)
           .where('status', isEqualTo: 'pending')
-          .orderBy('createdAt', descending: true)
           .get();
 
-      return snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList();
+      final list = snapshot.docs
+          .map((doc) => BookingModel.fromFirestore(doc))
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return list;
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
       return [];
@@ -306,27 +319,29 @@ class BookingService {
     }
   }
 
-  /// Stream бронирований пользователя (real-time)
+  /// Stream бронирований пользователя (real-time, сортировка на клиенте)
   Stream<List<BookingModel>> streamUserBookings(String userId) {
     return _firestore
         .collection('bookings')
         .where('userId', isEqualTo: userId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList());
+        .map((snapshot) => snapshot.docs
+            .map((doc) => BookingModel.fromFirestore(doc))
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
   }
 
-  /// Stream ожидающих бронирований (real-time)
+  /// Stream ожидающих бронирований (real-time, сортировка на клиенте)
   Stream<List<BookingModel>> streamPendingBookings(String choyxonaId) {
     return _firestore
         .collection('bookings')
         .where('choyxonaId', isEqualTo: choyxonaId)
         .where('status', isEqualTo: 'pending')
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList());
+        .map((snapshot) => snapshot.docs
+            .map((doc) => BookingModel.fromFirestore(doc))
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
   }
 
   /// Проверить, есть ли свободные комнаты в чайхане на дату (вместимость = кол-во комнат)

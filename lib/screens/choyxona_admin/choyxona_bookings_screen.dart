@@ -191,7 +191,7 @@ class _ChoyxonaBookingsScreenState extends State<ChoyxonaBookingsScreen>
         .map((d) => RoomModel.fromFirestore(d))
         .where((r) => !r.isUnavailable && !occupied.contains(r.id))
         .toList()
-      ..sort((a, b) => a.number.compareTo(b.number));
+      ..sort(RoomModel.compareByNumber);
 
     if (!mounted) return null;
     if (rooms.isEmpty) {

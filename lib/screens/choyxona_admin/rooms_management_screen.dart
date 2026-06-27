@@ -42,7 +42,7 @@ class RoomsManagementScreen extends StatelessWidget {
           final rooms = (roomSnap.data?.docs ?? [])
               .map((d) => RoomModel.fromFirestore(d))
               .toList()
-            ..sort((a, b) => a.number.compareTo(b.number));
+            ..sort(RoomModel.compareByNumber);
 
           if (rooms.isEmpty) {
             return ChoyEmptyState(

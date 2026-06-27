@@ -7,6 +7,7 @@ import {
     onDocumentCreated,
     onDocumentUpdated,
 } from "firebase-functions/v2/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 
 admin.initializeApp();
 
@@ -155,26 +156,40 @@ export const onBookingCreated = onDocumentCreated(
 
         try {
             const choyxonaDoc = await db.collection("choyxonas").doc(choyxonaId).get();
-            if (!choyxonaDoc.exists) return;
+            const choyxona = choyxonaDoc.exists ? choyxonaDoc.data() : undefined;
+            const choyxonaName = choyxona?.name || "choyxona";
 
-            const choyxona = choyxonaDoc.data();
-            const ownerId = choyxona?.ownerId as string;
-            if (!ownerId) return;
+            // Получатели: админы этой чайханы + владелец (если задан).
+            // Уведомления формируются на сервере (Admin SDK), поэтому клиенту
+            // не нужно ни читать чужие user-документы, ни писать в notifications.
+            const recipients = new Set<string>();
+            const adminsSnap = await db
+                .collection("users")
+                .where("choyxonaId", "==", choyxonaId)
+                .where("role", "==", "choyxona_admin")
+                .get();
+            adminsSnap.forEach((d) => recipients.add(d.id));
+            const ownerId = choyxona?.ownerId as string | undefined;
+            if (ownerId) recipients.add(ownerId);
 
-            await db.collection("notifications").add({
-                userId: ownerId,
-                title: "Yangi bron! 🔔",
-                body: `${guestName} ${choyxona?.name || "choyxona"}da joy bron qildi.`,
-                data: {
-                    type: "new_booking",
-                    bookingId: event.params.bookingId,
-                    choyxonaId: choyxonaId,
-                },
-                isRead: false,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
+            await Promise.all(
+                Array.from(recipients).map((uid) =>
+                    db.collection("notifications").add({
+                        userId: uid,
+                        title: "Yangi bron! 🔔",
+                        body: `${guestName} ${choyxonaName}da joy bron qildi.`,
+                        data: {
+                            type: "new_booking",
+                            bookingId: event.params.bookingId,
+                            choyxonaId: choyxonaId,
+                        },
+                        isRead: false,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    })
+                )
+            );
 
-            console.log(`Created notification for owner ${ownerId}`);
+            console.log(`Booking notification sent to ${recipients.size} recipient(s)`);
         } catch (error) {
             console.error("Error in onBookingCreated:", error);
         }
@@ -232,3 +247,38 @@ export const onBookingStatusChanged = onDocumentUpdated(
         }
     }
 );
+
+/**
+ * Ежедневная очистка устаревших замков комнат (room_locks).
+ * Замки храняться по дате (id = "{roomId}_{bookingDate}"). Замки прошедших дат
+ * больше не нужны, поэтому удаляем их, чтобы коллекция не разрасталась и не
+ * влияла на запросы занятости. Сравнение строк YYYY-MM-DD лексикографически
+ * совпадает с хронологией. Только одно неравенство по одному полю — индекс не нужен.
+ */
+export const cleanupExpiredRoomLocks = onSchedule("every 24 hours", async () => {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+
+    try {
+        const snap = await db
+            .collection("room_locks")
+            .where("bookingDate", "<", todayStr)
+            .get();
+
+        if (snap.empty) {
+            console.log("No expired room locks to clean up");
+            return;
+        }
+
+        // Удаляем партиями по 400 (лимит batch — 500).
+        const docs = snap.docs;
+        for (let i = 0; i < docs.length; i += 400) {
+            const batch = db.batch();
+            docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+            await batch.commit();
+        }
+        console.log(`Cleaned up ${docs.length} expired room lock(s)`);
+    } catch (error) {
+        console.error("Error in cleanupExpiredRoomLocks:", error);
+    }
+});

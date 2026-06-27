@@ -74,6 +74,16 @@ class RoomModel {
   /// Отображаемое название (номер или имя)
   String get displayName => name.isNotEmpty ? name : 'Xona $number';
 
+  /// Сортировка по номеру комнаты с учётом чисел ("1","2","10" вместо "1","10","2").
+  static int compareByNumber(RoomModel a, RoomModel b) {
+    final ai = int.tryParse(a.number);
+    final bi = int.tryParse(b.number);
+    if (ai != null && bi != null) return ai.compareTo(bi);
+    if (ai != null) return -1;
+    if (bi != null) return 1;
+    return a.number.compareTo(b.number);
+  }
+
   RoomModel copyWith({
     String? id,
     String? choyxonaId,

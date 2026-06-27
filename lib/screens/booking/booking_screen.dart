@@ -9,7 +9,6 @@ import '../../models/choyxona_model.dart';
 import '../../models/room_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/booking_service.dart';
-import '../../services/push_notification_service.dart';
 
 /// 🍵 Bron ekrani — kun-asosli + xona tanlash (TZ B.2/B.3.3, Faza 4 redizayn).
 class BookingScreen extends StatefulWidget {
@@ -87,7 +86,7 @@ class _BookingScreenState extends State<BookingScreen> {
       final rooms = roomsSnap.docs
           .map((d) => RoomModel.fromFirestore(d))
           .toList()
-        ..sort((a, b) => a.number.compareTo(b.number));
+        ..sort(RoomModel.compareByNumber);
 
       final occupied = <String, Set<String>>{};
       for (final d in locksSnap.docs) {
@@ -228,6 +227,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 : () => setState(() {
                       _selectedDate = date;
                       _selectedRoomId = null;
+                      _letAdminChoose = false;
                     }),
             child: Container(
               width: 68,
@@ -588,7 +588,8 @@ class _BookingScreenState extends State<BookingScreen> {
         return;
       }
 
-      await _notifyAdmins(name);
+      // Adminlarga xabar onBookingCreated Cloud Function orqali (server-side)
+      // yuboriladi — klient boshqa userlarni o'qimaydi.
       if (!mounted) return;
       _snack('booking_success'.tr());
       Navigator.pop(context);
@@ -597,28 +598,6 @@ class _BookingScreenState extends State<BookingScreen> {
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
-  }
-
-  Future<void> _notifyAdmins(String guestName) async {
-    try {
-      final admins = await FirebaseFirestore.instance
-          .collection('users')
-          .where('choyxonaId', isEqualTo: widget.choyxona.id)
-          .where('role', isEqualTo: 'choyxona_admin')
-          .get();
-      final slotText = _selectedSlot == 'morning'
-          ? 'time_slot_day'.tr()
-          : 'time_slot_night'.tr();
-      for (final admin in admins.docs) {
-        await PushNotificationService().sendNotificationToUser(
-          userId: admin.id,
-          title: 'Yangi bron! 📅',
-          body:
-              '$guestName · ${widget.choyxona.name} · $_dateStr · $slotText · $_guestCount ${'guests_short'.tr()}',
-          data: {'type': 'new_booking', 'choyxonaId': widget.choyxona.id},
-        );
-      }
-    } catch (_) {}
   }
 
   void _snack(String msg, {bool error = false}) {
