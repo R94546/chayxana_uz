@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/design/choy_tokens.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/theme/theme_provider.dart';
@@ -51,7 +52,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             .get();
         reviewsCount = reviewsSnapshot.count ?? 0;
       } catch (e) {
-        print('Error loading reviews count: $e');
+        debugPrint('Error loading reviews count: $e');
       }
     }
     
@@ -187,13 +188,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildProfileHeader(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: isDark ? AppColors.darkPrimaryGradient : AppColors.primaryGradient,
+        gradient: ChoyPalette.teaGradient,
         boxShadow: [
           BoxShadow(
             color: Theme.of(context).primaryColor.withOpacity(0.3),
@@ -213,7 +212,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   width: 100,
                   height: 100,
                   decoration: BoxDecoration(
-                    color: AppColors.accent,
+                    color: ChoyPalette.gold,
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: AppColors.textWhite,
@@ -323,7 +322,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               icon: Icons.favorite,
               label: 'favorites'.tr(),
               value: '${_currentUser?.favoriteChoyxonas.length ?? 0}',
-              color: AppColors.error,
+              color: ChoyPalette.danger,
               onTap: _showFavorites,
             ),
           ),
@@ -450,7 +449,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             trailing: Switch(
               value: isDark,
               onChanged: (value) => themeProvider.toggleTheme(),
-              activeColor: AppColors.accent,
+              activeColor: ChoyPalette.gold,
             ),
           ),
           
@@ -480,7 +479,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             context,
             icon: Icons.logout,
             title: 'logout'.tr(),
-            textColor: AppColors.error,
+            textColor: ChoyPalette.danger,
             onTap: _handleLogout,
           ),
         ],
@@ -544,12 +543,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                gradient: AppColors.primaryGradient,
+                gradient: ChoyPalette.teaGradient,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: const Icon(
-                Icons.restaurant,
-                color: AppColors.textWhite,
+                Icons.local_cafe_rounded,
+                color: Colors.white,
               ),
             ),
             const SizedBox(width: 12),
@@ -605,7 +604,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
+              backgroundColor: ChoyPalette.danger,
             ),
             child: Text('exit'.tr(), style: const TextStyle(color: Colors.white)),
           ),
