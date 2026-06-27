@@ -40,20 +40,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
   Future<void> _loadData() async {
     try {
       final user = await AuthService().getCurrentUserData();
-      
-      // DEBUG: Выводим информацию о пользователе
-      print('=== ChoyxonaAdminDashboard DEBUG ===');
-      print('User loaded: ${user != null}');
-      if (user != null) {
-        print('User ID: ${user.userId}');
-        print('User Email: ${user.email}');
-        print('User Role: ${user.role}');
-        print('ChoyxonaId: "${user.choyxonaId}"');
-        print('ChoyxonaId is null: ${user.choyxonaId == null}');
-        print('ChoyxonaId isEmpty: ${user.choyxonaId?.isEmpty ?? true}');
-      }
-      print('=====================================');
-      
+
       if (user == null || user.choyxonaId == null || user.choyxonaId!.isEmpty) {
         setState(() {
           _user = user;
@@ -89,7 +76,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
               .get();
           todayBookingsCount = todayBookings.count ?? 0;
         } catch (e) {
-          print('Today bookings query failed (index may be needed): $e');
+          debugPrint('Today bookings query failed (index may be needed): $e');
         }
 
         // Ожидающие подтверждения
@@ -102,7 +89,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
               .get();
           pendingBookingsCount = pendingBookings.count ?? 0;
         } catch (e) {
-          print('Pending bookings query failed: $e');
+          debugPrint('Pending bookings query failed: $e');
         }
 
         // Всего бронирований
@@ -114,7 +101,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
               .get();
           totalBookingsCount = totalBookings.count ?? 0;
         } catch (e) {
-          print('Total bookings query failed: $e');
+          debugPrint('Total bookings query failed: $e');
         }
 
         // Отзывы
@@ -126,10 +113,10 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
               .get();
           reviewsCount = reviews.count ?? 0;
         } catch (e) {
-          print('Reviews query failed: $e');
+          debugPrint('Reviews query failed: $e');
         }
       } catch (e) {
-        print('Stats loading error: $e');
+        debugPrint('Stats loading error: $e');
       }
 
       setState(() {
@@ -145,7 +132,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
         _isLoading = false;
       });
     } catch (e) {
-      print('Error loading data: $e');
+      debugPrint('Error loading data: $e');
       setState(() => _isLoading = false);
     }
   }
