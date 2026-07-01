@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:easy_localization/easy_localization.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_text_styles.dart';
+import '../../core/design/choy_tokens.dart';
+import '../../core/design/choy_components.dart';
 import '../../core/utils/responsive_layout.dart';
 import '../../services/favorites_service.dart';
 import '../../services/auth_service.dart';
@@ -38,7 +38,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
+              backgroundColor: ChoyPalette.danger,
             ),
             child: Text('remove'.tr()),
           ),
@@ -55,7 +55,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('removed_from_favorites'.tr()),
-            backgroundColor: AppColors.success,
+            backgroundColor: ChoyPalette.success,
           ),
         );
       }
@@ -64,8 +64,6 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -138,7 +136,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   itemCount: choyxonas.length,
                   itemBuilder: (context, index) {
                     final choyxona = choyxonas[index];
-                    return _buildFavoriteCard(choyxona, isDark);
+                    return _buildFavoriteCard(choyxona);
                   },
                 );
               }
@@ -148,7 +146,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                 itemCount: choyxonas.length,
                 itemBuilder: (context, index) {
                   final choyxona = choyxonas[index];
-                  return _buildFavoriteCard(choyxona, isDark);
+                  return _buildFavoriteCard(choyxona);
                 },
               );
             },
@@ -158,210 +156,171 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     );
   }
 
-  Widget _buildFavoriteCard(Choyxona choyxona, bool isDark) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      color: isDark ? AppColors.darkSurface : AppColors.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
+  Widget _buildFavoriteCard(Choyxona choyxona) {
+    final c = ChoyColors.of(context);
+    final isOpen = choyxona.isOpenNow();
+    return Container(
+      margin: const EdgeInsets.only(bottom: ChoySpace.lg),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: ChoyRadius.all(ChoyRadius.xl),
+        border: Border.all(color: c.border),
+        boxShadow: ChoyShadow.card(c.isDark),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => ChoyxonaDetailsScreen(choyxona: choyxona),
             ),
-          );
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Column(
-          children: [
-            // Изображение
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-              child: Stack(
-                children: [
-                  Image.network(
-                    choyxona.mainImage,
-                    height: 150,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+          ),
+          borderRadius: ChoyRadius.all(ChoyRadius.xl),
+          child: Column(
+            children: [
+              ClipRRect(
+                borderRadius:
+                    BorderRadius.vertical(top: Radius.circular(ChoyRadius.xl)),
+                child: Stack(
+                  children: [
+                    SizedBox(
                       height: 150,
-                      color: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant,
-                      child: const Icon(Icons.restaurant, size: 48),
+                      width: double.infinity,
+                      child: choyxona.mainImage.isNotEmpty
+                          ? Image.network(
+                              choyxona.mainImage,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                color: c.surfaceVariant,
+                                child: Icon(Icons.local_cafe_rounded,
+                                    size: 48, color: c.textMuted),
+                              ),
+                            )
+                          : Container(
+                              color: c.surfaceVariant,
+                              child: Icon(Icons.local_cafe_rounded,
+                                  size: 48, color: c.textMuted),
+                            ),
                     ),
-                  ),
-                  // Статус
-                  Positioned(
-                    top: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: choyxona.isOpenNow() ? AppColors.success : AppColors.error,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        choyxona.isOpenNow() ? 'open'.tr() : 'closed'.tr(),
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                    Positioned(
+                      top: 12,
+                      left: 12,
+                      child: ChoyStatusBadge(
+                        label: isOpen ? 'open'.tr() : 'closed'.tr(),
+                        tone: isOpen
+                            ? ChoyStatusTone.success
+                            : ChoyStatusTone.danger,
                       ),
                     ),
-                  ),
-                  // Кнопка удаления из избранного
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => _confirmRemoveFavorite(choyxona),
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 4,
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => _confirmRemoveFavorite(choyxona),
+                          borderRadius: ChoyRadius.all(ChoyRadius.pill),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(Icons.favorite,
+                                color: ChoyPalette.danger, size: 22),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(ChoySpace.lg),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            choyxona.name,
+                            style: TextStyle(
+                                color: c.textPrimary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 17),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(Icons.location_on_outlined,
+                                  size: 14, color: c.textMuted),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  choyxona.address.fullAddress,
+                                  style: TextStyle(
+                                      color: c.textSecondary, fontSize: 12),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ],
                           ),
-                          child: const Icon(
-                            Icons.favorite,
-                            color: AppColors.error,
-                            size: 24,
-                          ),
-                        ),
+                        ],
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            // Информация
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          choyxona.name,
-                          style: AppTextStyles.titleLarge.copyWith(
-                            color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: ChoyPalette.star.withValues(alpha: 0.12),
+                        borderRadius: ChoyRadius.all(ChoyRadius.sm),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.star_rounded,
+                              size: 16, color: ChoyPalette.star),
+                          const SizedBox(width: 3),
+                          Text(
+                            choyxona.rating.toStringAsFixed(1),
+                            style: const TextStyle(
+                                color: ChoyPalette.star,
+                                fontWeight: FontWeight.w700),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Icon(Icons.location_on, size: 14, 
-                                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                choyxona.address.fullAddress,
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                  // Рейтинг
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.starGold.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.star, size: 16, color: AppColors.starGold),
-                        const SizedBox(width: 4),
-                        Text(
-                          choyxona.rating.toStringAsFixed(1),
-                          style: const TextStyle(
-                            color: AppColors.starGold,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildEmptyState(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: (isDark ? AppColors.darkError : AppColors.error).withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.favorite_border,
-                size: 60,
-                color: isDark ? AppColors.darkError : AppColors.error,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'no_favorites'.tr(),
-              style: Theme.of(context).textTheme.headlineMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'add_favorites_text'.tr(),
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              onPressed: () {
-                DefaultTabController.of(context)?.animateTo(0);
-              },
-              icon: const Icon(Icons.explore),
-              label: Text('explore'.tr()),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).primaryColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 16,
-                ),
-              ),
-            ),
-          ],
-        ),
+    return ChoyEmptyState(
+      icon: Icons.favorite_border_rounded,
+      title: 'no_favorites'.tr(),
+      message: 'add_favorites_text'.tr(),
+      action: ChoyButton(
+        label: 'explore'.tr(),
+        icon: Icons.explore_rounded,
+        expanded: false,
+        onPressed: () =>
+            DefaultTabController.maybeOf(context)?.animateTo(0),
       ),
     );
   }

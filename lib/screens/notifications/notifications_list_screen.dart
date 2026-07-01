@@ -1,28 +1,27 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_text_styles.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
+
+import '../../core/design/choy_components.dart';
+import '../../core/design/choy_tokens.dart';
 import '../../services/auth_service.dart';
 
-/// Экран списка уведомлений
+/// 🔔 Bildirishnomalar ro'yxati — premium redizayn + lokalizatsiya (Faza 4/5).
 class NotificationsListScreen extends StatelessWidget {
   const NotificationsListScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final c = ChoyColors.of(context);
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: c.background,
       appBar: AppBar(
-        title: const Text('Уведомления'),
-        elevation: 0,
-        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-        foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
+        title: Text('notifications'.tr()),
         actions: [
           IconButton(
-            icon: const Icon(Icons.done_all),
+            icon: const Icon(Icons.done_all_rounded),
             onPressed: () => _markAllAsRead(context),
-            tooltip: 'Отметить все как прочитанные',
+            tooltip: 'mark_all_read'.tr(),
           ),
         ],
       ),
@@ -30,7 +29,7 @@ class NotificationsListScreen extends StatelessWidget {
         future: _getCurrentUserId(),
         builder: (context, userSnapshot) {
           if (!userSnapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+            return Center(child: CircularProgressIndicator(color: c.primary));
           }
 
           return StreamBuilder<QuerySnapshot>(
@@ -41,56 +40,44 @@ class NotificationsListScreen extends StatelessWidget {
                 .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
+                return ChoyEmptyState(
+                  icon: Icons.error_outline_rounded,
+                  title: 'notifications_load_error'.tr(),
+                );
+              }
+              if (snapshot.connectionState == ConnectionState.waiting) {
                 return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 64,
-                        color: AppColors.error,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Ошибка загрузки уведомлений',
-                        style: AppTextStyles.titleMedium,
-                      ),
-                    ],
-                  ),
+                    child: CircularProgressIndicator(color: c.primary));
+              }
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return ChoyEmptyState(
+                  icon: Icons.notifications_none_rounded,
+                  title: 'no_notifications'.tr(),
+                  message: 'no_notifications_hint'.tr(),
                 );
               }
 
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return _buildEmptyState(context);
-              }
-
-              // Sort locally by createdAt descending (newest first)
-              final notifications = snapshot.data!.docs.toList();
-              notifications.sort((a, b) {
-                final aData = a.data() as Map<String, dynamic>;
-                final bData = b.data() as Map<String, dynamic>;
-                final aTime = aData['createdAt'] as Timestamp?;
-                final bTime = bData['createdAt'] as Timestamp?;
-                if (aTime == null && bTime == null) return 0;
-                if (aTime == null) return 1;
-                if (bTime == null) return -1;
-                return bTime.compareTo(aTime);
-              });
+              // Sort locally by createdAt descending (indekssiz)
+              final notifications = snapshot.data!.docs.toList()
+                ..sort((a, b) {
+                  final aTime =
+                      (a.data() as Map)['createdAt'] as Timestamp?;
+                  final bTime =
+                      (b.data() as Map)['createdAt'] as Timestamp?;
+                  if (aTime == null && bTime == null) return 0;
+                  if (aTime == null) return 1;
+                  if (bTime == null) return -1;
+                  return bTime.compareTo(aTime);
+                });
 
               return ListView.builder(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(ChoySpace.lg),
                 itemCount: notifications.length,
                 itemBuilder: (context, index) {
                   final notification = notifications[index];
-                  final data = notification.data() as Map<String, dynamic>;
-
                   return _NotificationCard(
                     notificationId: notification.id,
-                    data: data,
+                    data: notification.data() as Map<String, dynamic>,
                   );
                 },
               );
@@ -106,49 +93,6 @@ class NotificationsListScreen extends StatelessWidget {
     return user?.userId;
   }
 
-  Widget _buildEmptyState(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.notifications_none,
-                size: 60,
-                color: Theme.of(context).primaryColor,
-              ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Нет уведомлений',
-              style: AppTextStyles.headlineMedium.copyWith(
-                color: Theme.of(context).textTheme.bodyLarge?.color,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Здесь будут отображаться ваши уведомления',
-              style: AppTextStyles.bodyLarge.copyWith(
-                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _markAllAsRead(BuildContext context) async {
     try {
       final userId = await _getCurrentUserId();
@@ -160,18 +104,16 @@ class NotificationsListScreen extends StatelessWidget {
           .where('userId', isEqualTo: userId)
           .where('isRead', isEqualTo: false)
           .get();
-
       for (var doc in notifications.docs) {
         batch.update(doc.reference, {'isRead': true});
       }
-
       await batch.commit();
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Все уведомления отмечены как прочитанные'),
-            backgroundColor: AppColors.success,
+          SnackBar(
+            content: Text('all_marked_read'.tr()),
+            backgroundColor: ChoyPalette.success,
           ),
         );
       }
@@ -179,8 +121,8 @@ class NotificationsListScreen extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Ошибка: ${e.toString()}'),
-            backgroundColor: AppColors.error,
+            content: Text('${'error'.tr()}: $e'),
+            backgroundColor: ChoyPalette.danger,
           ),
         );
       }
@@ -188,65 +130,49 @@ class NotificationsListScreen extends StatelessWidget {
   }
 }
 
-/// Карточка уведомления
 class _NotificationCard extends StatelessWidget {
   final String notificationId;
   final Map<String, dynamic> data;
 
-  const _NotificationCard({
-    required this.notificationId,
-    required this.data,
-  });
+  const _NotificationCard({required this.notificationId, required this.data});
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final c = ChoyColors.of(context);
     final isRead = data['isRead'] ?? false;
-    final type = data['type'] ?? 'info';
-    final title = data['title'] ?? 'Уведомление';
-    final body = data['body'] ?? '';
+    final type = (data['type'] ?? 'info').toString();
+    final title = (data['title'] ?? 'notification_default'.tr()).toString();
+    final body = (data['body'] ?? '').toString();
     final createdAt = data['createdAt'] as Timestamp?;
+    final typeColor = _getTypeColor(type);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: ChoySpace.md),
       decoration: BoxDecoration(
-        color: isRead
-            ? Theme.of(context).cardColor
-            : Theme.of(context).primaryColor.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isRead
-              ? Theme.of(context).dividerColor
-              : Theme.of(context).primaryColor.withOpacity(0.3),
-        ),
+        color: isRead ? c.surface : c.primaryContainer,
+        borderRadius: ChoyRadius.all(ChoyRadius.lg),
+        border: Border.all(color: isRead ? c.border : c.primary),
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => _markAsRead(context),
+          borderRadius: ChoyRadius.all(ChoyRadius.lg),
+          onTap: () => _markAsRead(),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(ChoySpace.lg),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Иконка
                 Container(
-                  width: 48,
-                  height: 48,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
-                    color: _getTypeColor(type).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+                    color: typeColor.withValues(alpha: 0.12),
+                    borderRadius: ChoyRadius.all(ChoyRadius.md),
                   ),
-                  child: Icon(
-                    _getTypeIcon(type),
-                    color: _getTypeColor(type),
-                    size: 24,
-                  ),
+                  child: Icon(_getTypeIcon(type), color: typeColor, size: 22),
                 ),
-                const SizedBox(width: 12),
-
-                // Контент
+                const SizedBox(width: ChoySpace.md),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -256,9 +182,12 @@ class _NotificationCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               title,
-                              style: AppTextStyles.titleSmall.copyWith(
-                                color: Theme.of(context).textTheme.bodyLarge?.color,
-                                fontWeight: isRead ? FontWeight.w600 : FontWeight.bold,
+                              style: TextStyle(
+                                color: c.textPrimary,
+                                fontWeight: isRead
+                                    ? FontWeight.w600
+                                    : FontWeight.w800,
+                                fontSize: 14,
                               ),
                             ),
                           ),
@@ -267,7 +196,7 @@ class _NotificationCard extends StatelessWidget {
                               width: 8,
                               height: 8,
                               decoration: BoxDecoration(
-                                color: Theme.of(context).primaryColor,
+                                color: c.primary,
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -275,23 +204,17 @@ class _NotificationCard extends StatelessWidget {
                       ),
                       if (body.isNotEmpty) ...[
                         const SizedBox(height: 4),
-                        Text(
-                          body,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        Text(body,
+                            style: TextStyle(
+                                color: c.textSecondary, fontSize: 13),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
                       ],
                       if (createdAt != null) ...[
                         const SizedBox(height: 8),
-                        Text(
-                          _formatTime(createdAt.toDate()),
-                          style: AppTextStyles.labelSmall.copyWith(
-                            color: isDark ? AppColors.darkTextLight : AppColors.textLight,
-                          ),
-                        ),
+                        Text(_formatTime(context, createdAt.toDate()),
+                            style:
+                                TextStyle(color: c.textMuted, fontSize: 11)),
                       ],
                     ],
                   ),
@@ -306,63 +229,65 @@ class _NotificationCard extends StatelessWidget {
 
   IconData _getTypeIcon(String type) {
     switch (type) {
+      case 'new_booking':
       case 'booking':
-        return Icons.event_available;
+      case 'booking_confirmed':
+      case 'booking_status_update':
+        return Icons.event_available_rounded;
       case 'favorite':
-        return Icons.favorite;
+        return Icons.favorite_rounded;
       case 'review':
-        return Icons.comment;
+        return Icons.comment_rounded;
+      case 'new_order':
+      case 'order_added':
+        return Icons.restaurant_menu_rounded;
       case 'promo':
-        return Icons.local_offer;
+        return Icons.local_offer_rounded;
       case 'system':
-        return Icons.settings;
+        return Icons.settings_rounded;
       default:
-        return Icons.notifications;
+        return Icons.notifications_rounded;
     }
   }
 
   Color _getTypeColor(String type) {
     switch (type) {
+      case 'new_booking':
       case 'booking':
-        return AppColors.success;
+      case 'booking_confirmed':
+      case 'booking_status_update':
+        return ChoyPalette.success;
       case 'favorite':
-        return AppColors.error;
+        return ChoyPalette.danger;
       case 'review':
-        return AppColors.info;
+        return ChoyPalette.info;
+      case 'new_order':
+      case 'order_added':
+        return ChoyPalette.gold;
       case 'promo':
-        return AppColors.warning;
+        return ChoyPalette.warning;
       default:
-        return AppColors.primary;
+        return ChoyPalette.tea;
     }
   }
 
-  String _formatTime(DateTime dateTime) {
-    final now = DateTime.now();
-    final difference = now.difference(dateTime);
-
-    if (difference.inMinutes < 1) {
-      return 'Только что';
-    } else if (difference.inHours < 1) {
-      return '${difference.inMinutes} мин назад';
-    } else if (difference.inDays < 1) {
-      return '${difference.inHours} ч назад';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays} дн назад';
-    } else {
-      return DateFormat('d MMM, HH:mm', 'ru').format(dateTime);
-    }
+  String _formatTime(BuildContext context, DateTime dateTime) {
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inMinutes < 1) return 'time_just_now'.tr();
+    if (diff.inHours < 1) return 'time_min_ago'.tr(args: ['${diff.inMinutes}']);
+    if (diff.inDays < 1) return 'time_hours_ago'.tr(args: ['${diff.inHours}']);
+    if (diff.inDays < 7) return 'time_days_ago'.tr(args: ['${diff.inDays}']);
+    return DateFormat('d MMM, HH:mm', context.locale.languageCode)
+        .format(dateTime);
   }
 
-  Future<void> _markAsRead(BuildContext context) async {
+  Future<void> _markAsRead() async {
     if (data['isRead'] == true) return;
-
     try {
       await FirebaseFirestore.instance
           .collection('notifications')
           .doc(notificationId)
           .update({'isRead': true});
-    } catch (e) {
-      // Ignore errors silently
-    }
+    } catch (_) {}
   }
 }

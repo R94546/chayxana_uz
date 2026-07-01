@@ -28,12 +28,7 @@ service cloud.firestore {
     function isClient() {
       return hasRole('client') || hasRole('user');
     }
-    
-    /// Проверка, что пользователь - владелец чайханы
-    function isChoyxonaOwner() {
-      return hasRole('owner');
-    }
-    
+
     /// Проверка, что пользователь - супер админ
     function isAdmin() {
       return hasRole('admin') || hasRole('superadmin');
@@ -79,13 +74,18 @@ service cloud.firestore {
     // ========== USERS COLLECTION ==========
     
     match /users/{userId} {
-      // Чтение: авторизованные пользователи
-      allow read: if isAuthenticated();
+      // Чтение: сам пользователь, супер-админ или админ чайханы.
+      // (раньше любой авторизованный мог читать ВСЕ профили — телефон, email,
+      //  deviceTokens. Клиентам чужие профили больше не нужны: рассылка
+      //  уведомлений перенесена на сервер.)
+      allow read: if isAuthenticated() &&
+                     (request.auth.uid == userId || isAdmin() || isChoyxonaAdmin());
       
-      // Создание: только при регистрации своего профиля
-      allow create: if isAuthenticated() && 
+      // Создание: только при регистрации своего профиля (только роль клиента)
+      // Роли choyxona_admin / superadmin назначаются супер-админом через update
+      allow create: if isAuthenticated() &&
                        request.auth.uid == userId &&
-                       request.resource.data.role in ['client', 'user', 'owner'];
+                       request.resource.data.role in ['client', 'user'];
       
       // Обновление: сам пользователь или админ
       allow update: if isAuthenticated() && 
@@ -101,10 +101,8 @@ service cloud.firestore {
       // Чтение: все (публичные данные)
       allow read: if true;
       
-      // Создание: владельцы и админы
-      allow create: if isAuthenticated() && 
-                       (isChoyxonaOwner() || isAdmin()) &&
-                       request.resource.data.ownerId == request.auth.uid;
+      // Создание: только супер-админ (он создаёт чайхану и назначает админа)
+      allow create: if isAuthenticated() && isAdmin();
       
       // Обновление: владелец чайханы, админ чайханы (привязанный) или супер-админ
       // ЭТО КЛЮЧЕВОЕ ИЗМЕНЕНИЕ - разрешаем choyxona_admin обновлять свою чайхану
@@ -131,20 +129,33 @@ service cloud.firestore {
     
     // ========== BOOKINGS COLLECTION ==========
     
+    // Клиент НЕ может сам подтверждать/оплачивать бронь или назначать комнату.
+    // Разрешено клиенту: отмена, авто-завершение прошедших, hasOrder/isRated.
+    // Подтверждение и назначение комнаты — только админ чайханы (hasChoyxonaAccess).
+    function clientBookingUpdateOk() {
+      return request.resource.data.paymentStatus == resource.data.paymentStatus &&
+             request.resource.data.roomId == resource.data.roomId &&
+             (request.resource.data.status == resource.data.status ||
+              request.resource.data.status == 'cancelled' ||
+              request.resource.data.status == 'completed');
+    }
+
     match /bookings/{bookingId} {
       // Чтение: создатель бронирования, админ чайханы или супер-админ
-      allow read: if isAuthenticated() && 
-                     (isOwner(resource.data.userId) || 
+      allow read: if isAuthenticated() &&
+                     (isOwner(resource.data.userId) ||
                       hasChoyxonaAccess(resource.data.choyxonaId));
-      
-      // Создание: авторизованные пользователи
-      allow create: if isAuthenticated() && 
-                       request.resource.data.userId == request.auth.uid;
-      
-      // Обновление: создатель, админ чайханы или супер-админ
-      allow update: if isAuthenticated() && 
-                       (isOwner(resource.data.userId) ||
-                        hasChoyxonaAccess(resource.data.choyxonaId));
+
+      // Создание: только своя бронь и только со статусом pending
+      // (нельзя самоподтвердиться или создать оплаченную бронь)
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.status == 'pending';
+
+      // Обновление: админ чайханы — полностью; создатель — ограниченно
+      allow update: if isAuthenticated() &&
+                       (hasChoyxonaAccess(resource.data.choyxonaId) ||
+                        (isOwner(resource.data.userId) && clientBookingUpdateOk()));
       
       // Удаление: создатель (для completed/cancelled), админ чайханы или супер-админ
       allow delete: if isAuthenticated() && 
@@ -161,11 +172,13 @@ service cloud.firestore {
                       hasChoyxonaAccess(resource.data.choyxonaId) ||
                       isOwner(resource.data.waiterId));
       
-      // Создание: авторизованные пользователи
-      allow create: if isAuthenticated();
-      
+      // Создание: свой заказ (клиент) либо управляющий этой чайханой
+      allow create: if isAuthenticated() &&
+                       (request.resource.data.userId == request.auth.uid ||
+                        canManageChoyxona(request.resource.data.choyxonaId));
+
       // Обновление: владелец чайханы, официант, админ чайханы или супер-админ
-      allow update: if isAuthenticated() && 
+      allow update: if isAuthenticated() &&
                        (hasChoyxonaAccess(resource.data.choyxonaId) ||
                         isOwner(resource.data.waiterId));
       
@@ -314,19 +327,44 @@ service cloud.firestore {
     
     match /notifications/{notificationId} {
       // Чтение: получатель или админ
-      allow read: if isAuthenticated() && 
+      allow read: if isAuthenticated() &&
                      (isOwner(resource.data.userId) || isAdmin());
-      
-      // Создание: авторизованные пользователи
-      allow create: if isAuthenticated();
+
+      // Создание: ТОЛЬКО сервер (Cloud Functions через Admin SDK).
+      // Клиент не может слать/подделывать пуш-уведомления другим пользователям.
+      allow create: if false;
       
       // Обновление: получатель или админ
       allow update: if isAuthenticated() && 
                        (isOwner(resource.data.userId) || isAdmin());
       
       // Удаление: получатель или админ
-      allow delete: if isAuthenticated() && 
+      allow delete: if isAuthenticated() &&
                        (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    // ========== ROOM_LOCKS COLLECTION (занятость комнат по дням) ==========
+    // Документ-замок: id = "{roomId}_{bookingDate}" гарантирует, что комната
+    // забронирована не более одного раза в день (вместимость = кол-во комнат).
+
+    match /room_locks/{lockId} {
+      // Чтение: все (нужно для отображения свободных/занятых комнат)
+      allow read: if true;
+
+      // Создание: ТОЛЬКО управляющий этой чайханой (для назначения комнаты
+      // админом). Клиентские брони создаются callable-функцией createBooking
+      // через Admin SDK (обходит правила), поэтому клиент НЕ может подделать
+      // замок и заблокировать чужие комнаты (защита от DoS).
+      allow create: if isAuthenticated() &&
+                       request.resource.data.roomId is string &&
+                       request.resource.data.choyxonaId is string &&
+                       request.resource.data.bookingDate is string &&
+                       canManageChoyxona(request.resource.data.choyxonaId);
+
+      // Обновление/удаление: управляющие чайханой или супер-админ
+      // (освобождение замка при отмене делает Cloud Function через admin SDK)
+      allow update, delete: if isAuthenticated() &&
+                               hasChoyxonaAccess(resource.data.choyxonaId);
     }
   }
 }

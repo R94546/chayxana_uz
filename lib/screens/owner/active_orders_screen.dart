@@ -336,6 +336,8 @@ class _ActiveOrdersScreenState extends State<ActiveOrdersScreen>
           ],
         ),
       ),
+        ],
+      ),
     );
   }
 

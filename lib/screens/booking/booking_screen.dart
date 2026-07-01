@@ -1,333 +1,274 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
 import 'package:easy_localization/easy_localization.dart';
-import '../../models/choyxona_model.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_text_styles.dart';
-import '../../services/auth_service.dart';
-import '../../services/push_notification_service.dart';
+import 'package:flutter/material.dart';
 
-/// Экран бронирования - день + слот (Kunduzi/Kechasi)
+import '../../core/design/choy_components.dart';
+import '../../core/design/choy_tokens.dart';
+import '../../models/booking_model.dart';
+import '../../models/choyxona_model.dart';
+import '../../models/room_model.dart';
+import '../../services/auth_service.dart';
+import '../../services/booking_service.dart';
+
+/// 🍵 Bron ekrani — kun-asosli + xona tanlash (TZ B.2/B.3.3, Faza 4 redizayn).
 class BookingScreen extends StatefulWidget {
   final Choyxona choyxona;
 
-  const BookingScreen({
-    super.key,
-    required this.choyxona,
-  });
+  const BookingScreen({super.key, required this.choyxona});
 
   @override
   State<BookingScreen> createState() => _BookingScreenState();
 }
 
 class _BookingScreenState extends State<BookingScreen> {
+  final _bookingService = BookingService();
+  final _specialRequestsController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+
   DateTime _selectedDate = DateTime.now();
-  String _selectedSlot = 'morning'; // 'morning' (08:00-16:00) yoki 'evening' (16:00-00:00)
+  String _selectedSlot = 'morning'; // kelish vaqti (informatsion)
   int _guestCount = 2;
-  final TextEditingController _specialRequestsController = TextEditingController();
-  bool _isLoading = false;
+
+  String? _selectedRoomId;
+  bool _letAdminChoose = false;
+
+  List<RoomModel> _rooms = [];
+  // Sana bo'yicha band xona id'lari: {'2026-06-27': {roomIdA, roomIdB}}
+  Map<String, Set<String>> _occupiedByDate = {};
+
   bool _isDataLoading = true;
-  
-  int _totalRooms = 0;
-  
-  // Занятость по датам и слотам: {'2025-01-29': {'morning': 5, 'evening': 3}}
-  Map<String, Map<String, int>> _bookedPerDateSlot = {};
+  bool _isSubmitting = false;
+
+  String get _dateStr => DateFormat('yyyy-MM-dd').format(_selectedDate);
+
+  int get _totalRooms => _rooms.isNotEmpty
+      ? _rooms.where((r) => !r.isUnavailable).length
+      : (widget.choyxona.roomCount > 0 ? widget.choyxona.roomCount : 0);
 
   @override
   void initState() {
     super.initState();
-    _loadBookingData();
+    _loadData();
+    _prefillContact();
   }
 
   @override
   void dispose() {
     _specialRequestsController.dispose();
+    _nameController.dispose();
+    _phoneController.dispose();
     super.dispose();
   }
 
-  /// Загрузить данные бронирования
-  Future<void> _loadBookingData() async {
+  Future<void> _prefillContact() async {
+    final user = await AuthService().getCurrentUserData();
+    if (user != null && mounted) {
+      _nameController.text =
+          user.fullName.trim().isNotEmpty ? user.fullName.trim() : user.email;
+      _phoneController.text = user.phone;
+    }
+  }
+
+  Future<void> _loadData() async {
     setState(() => _isDataLoading = true);
-
     try {
-      // Xonalar soni - faqat roomCount'dan
-      _totalRooms = widget.choyxona.roomCount > 0 ? widget.choyxona.roomCount : 10;
+      final fs = FirebaseFirestore.instance;
+      final roomsSnap = await fs
+          .collection('rooms')
+          .where('choyxonaId', isEqualTo: widget.choyxona.id)
+          .get();
+      final locksSnap = await fs
+          .collection('room_locks')
+          .where('choyxonaId', isEqualTo: widget.choyxona.id)
+          .get();
 
-      // Загрузить занятость на 30 дней вперёд
-      final Map<String, Map<String, int>> bookedData = {};
-      
-      for (int i = 0; i < 30; i++) {
-        final date = DateTime.now().add(Duration(days: i));
-        final dateStr = DateFormat('yyyy-MM-dd').format(date);
-        
-        // Бронирования на утро
-        final morningBookings = await FirebaseFirestore.instance
-            .collection('bookings')
-            .where('choyxonaId', isEqualTo: widget.choyxona.id)
-            .where('bookingDate', isEqualTo: dateStr)
-            .where('timeSlot', isEqualTo: 'morning')
-            .where('status', whereIn: ['pending', 'confirmed'])
-            .get();
+      final rooms = roomsSnap.docs
+          .map((d) => RoomModel.fromFirestore(d))
+          .toList()
+        ..sort(RoomModel.compareByNumber);
 
-        // Бронирования на вечер
-        final eveningBookings = await FirebaseFirestore.instance
-            .collection('bookings')
-            .where('choyxonaId', isEqualTo: widget.choyxona.id)
-            .where('bookingDate', isEqualTo: dateStr)
-            .where('timeSlot', isEqualTo: 'evening')
-            .where('status', whereIn: ['pending', 'confirmed'])
-            .get();
-
-        bookedData[dateStr] = {
-          'morning': morningBookings.docs.length,
-          'evening': eveningBookings.docs.length,
-        };
+      final occupied = <String, Set<String>>{};
+      for (final d in locksSnap.docs) {
+        final data = d.data();
+        final date = data['bookingDate'] as String? ?? '';
+        final roomId = data['roomId'] as String? ?? '';
+        if (date.isEmpty || roomId.isEmpty) continue;
+        occupied.putIfAbsent(date, () => <String>{}).add(roomId);
       }
 
       if (mounted) {
         setState(() {
-          _bookedPerDateSlot = bookedData;
+          _rooms = rooms;
+          _occupiedByDate = occupied;
           _isDataLoading = false;
         });
       }
-    } catch (e) {
-      debugPrint('Error loading booking data: $e');
-      if (mounted) {
-        setState(() => _isDataLoading = false);
-      }
+    } catch (_) {
+      if (mounted) setState(() => _isDataLoading = false);
     }
   }
 
-  /// Получить количество свободных комнат для даты и слота
-  int _getAvailableRooms(String dateStr, String slot) {
-    final booked = _bookedPerDateSlot[dateStr]?[slot] ?? 0;
-    return (_totalRooms - booked).clamp(0, _totalRooms);
-  }
+  Set<String> _occupiedOn(String date) => _occupiedByDate[date] ?? <String>{};
 
-  /// Проверить доступность слота
-  bool _isSlotAvailable(String dateStr, String slot) {
-    return _getAvailableRooms(dateStr, slot) > 0;
-  }
-
-  /// Kun uchun umumiy holat
-  bool _isDayFullyBooked(String dateStr) {
-    return !_isSlotAvailable(dateStr, 'morning') && !_isSlotAvailable(dateStr, 'evening');
-  }
-
-  /// Получить цвет для даты в календаре
-  /// 🟢 Yashil = hammasi bo'sh
-  /// 🔴 Qizil = hammasi band
-  /// 🟡 Sariq = kechasi band, kunduzi bo'sh
-  /// ⚪ Kulrang = kunduzi band, kechasi bo'sh
-  Color _getDateColor(String dateStr) {
-    final morningAvailable = _isSlotAvailable(dateStr, 'morning');
-    final eveningAvailable = _isSlotAvailable(dateStr, 'evening');
-
-    if (morningAvailable && eveningAvailable) {
-      return const Color(0xFF4CAF50); // Yashil - hammasi bo'sh
-    } else if (!morningAvailable && !eveningAvailable) {
-      return const Color(0xFFE53935); // Qizil - hammasi band
-    } else if (!eveningAvailable && morningAvailable) {
-      return const Color(0xFFFFB300); // Sariq - kechasi band
-    } else {
-      return const Color(0xFF78909C); // Kulrang - kunduzi band
+  int _freeRoomsOn(String date) {
+    if (_rooms.isNotEmpty) {
+      return _rooms
+          .where((r) => !r.isUnavailable && !_occupiedOn(date).contains(r.id))
+          .length;
     }
+    return (_totalRooms - _occupiedOn(date).length).clamp(0, _totalRooms);
+  }
+
+  /// Tanlangan sana + mehmonlar soniga mos bo'sh xonalar.
+  List<RoomModel> get _selectableRooms {
+    final occ = _occupiedOn(_dateStr);
+    return _rooms
+        .where((r) =>
+            !r.isUnavailable &&
+            !occ.contains(r.id) &&
+            r.capacity >= _guestCount)
+        .toList();
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = ChoyColors.of(context);
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text('book_table'.tr()),
-        elevation: 0,
-      ),
+      backgroundColor: c.background,
+      appBar: AppBar(title: Text('book_table'.tr())),
       body: _isDataLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Информация о чайхане
-                  _buildChoyxonaInfo(),
-                  const SizedBox(height: 24),
-
-                  // Выбор даты
-                  _buildSectionTitle('select_date'.tr()),
-                  const SizedBox(height: 12),
-                  _buildDateSelector(),
-                  const SizedBox(height: 8),
-                  _buildColorLegend(),
-                  const SizedBox(height: 24),
-
-                  // Выбор слота (Kunduzi/Kechasi)
-                  _buildSectionTitle('Vaqtni tanlang'),
-                  const SizedBox(height: 12),
-                  _buildSlotSelector(),
-                  const SizedBox(height: 24),
-
-                  // Количество гостей
-                  _buildSectionTitle('guest_count'.tr()),
-                  const SizedBox(height: 12),
-                  _buildGuestCountSelector(),
-                  const SizedBox(height: 24),
-
-                  // Пожелания
-                  _buildSectionTitle('special_requests'.tr()),
-                  const SizedBox(height: 12),
-                  _buildSpecialRequestsField(),
-                  const SizedBox(height: 32),
-
-                  // Кнопка бронирования
-                  _buildBookButton(),
-                ],
-              ),
-            ),
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: AppTextStyles.titleMedium.copyWith(fontWeight: FontWeight.bold),
-    );
-  }
-
-  Widget _buildChoyxonaInfo() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.shadow,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: (widget.choyxona.images.isNotEmpty && 
-                    widget.choyxona.images.first.startsWith('http'))
-                ? Image.network(
-                    widget.choyxona.images.first,
-                    width: 60,
-                    height: 60,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        width: 60,
-                        height: 60,
-                        color: AppColors.primary.withOpacity(0.1),
-                        child: const Icon(Icons.restaurant, color: AppColors.primary),
-                      );
-                    },
-                  )
-                : Container(
-                    width: 60,
-                    height: 60,
-                    color: AppColors.primary.withOpacity(0.1),
-                    child: const Icon(Icons.restaurant, color: AppColors.primary),
-                  ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          ? Center(child: CircularProgressIndicator(color: c.primary))
+          : ListView(
+              padding: const EdgeInsets.all(ChoySpace.lg),
               children: [
-                Text(
-                  widget.choyxona.name,
-                  style: AppTextStyles.titleMedium,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                _ChoyxonaInfo(choyxona: widget.choyxona, totalRooms: _totalRooms),
+                const SizedBox(height: ChoySpace.xxl),
+                _stepLabel(c, '1', 'select_date'.tr()),
+                const SizedBox(height: ChoySpace.md),
+                _buildDateSelector(c),
+                const SizedBox(height: ChoySpace.xxl),
+                _stepLabel(c, '2', 'arrival_time'.tr()),
+                const SizedBox(height: ChoySpace.md),
+                _buildSlotSelector(c),
+                const SizedBox(height: ChoySpace.xxl),
+                _stepLabel(c, '3', 'guest_count'.tr()),
+                const SizedBox(height: ChoySpace.md),
+                _buildGuestCount(c),
+                const SizedBox(height: ChoySpace.xxl),
+                _stepLabel(c, '4', 'select_room'.tr()),
+                const SizedBox(height: ChoySpace.md),
+                _buildRoomSelection(c),
+                const SizedBox(height: ChoySpace.xxl),
+                _stepLabel(c, '5', 'contact_info'.tr()),
+                const SizedBox(height: ChoySpace.md),
+                _buildContactFields(c),
+                const SizedBox(height: ChoySpace.lg),
+                TextField(
+                  controller: _specialRequestsController,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText: 'special_requests_placeholder'.tr(),
+                  ),
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.meeting_room, size: 14, color: AppColors.success),
-                    const SizedBox(width: 4),
-                    Text(
-                      '$_totalRooms ta xona mavjud',
-                      style: AppTextStyles.bodySmall.copyWith(color: AppColors.success),
-                    ),
-                  ],
-                ),
+                const SizedBox(height: ChoySpace.xxl),
+                _buildSubmit(c),
+                const SizedBox(height: ChoySpace.xxl),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
-  Widget _buildDateSelector() {
+  Widget _stepLabel(ChoyColors c, String n, String title) {
+    return Row(
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: c.primaryContainer,
+            shape: BoxShape.circle,
+          ),
+          child: Text(n,
+              style: TextStyle(
+                  color: c.primary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13)),
+        ),
+        const SizedBox(width: ChoySpace.sm),
+        Text(title,
+            style: TextStyle(
+                color: c.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 16)),
+      ],
+    );
+  }
+
+  Widget _buildDateSelector(ChoyColors c) {
     return SizedBox(
-      height: 100,
-      child: ListView.builder(
+      height: 96,
+      child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: 14,
+        separatorBuilder: (_, __) => const SizedBox(width: ChoySpace.sm),
         itemBuilder: (context, index) {
           final date = DateTime.now().add(Duration(days: index));
           final dateStr = DateFormat('yyyy-MM-dd').format(date);
-          final isSelected = DateFormat('yyyy-MM-dd').format(_selectedDate) == dateStr;
-          final dateColor = _getDateColor(dateStr);
-          final isFullyBooked = _isDayFullyBooked(dateStr);
-          final morningCount = _getAvailableRooms(dateStr, 'morning');
-          final eveningCount = _getAvailableRooms(dateStr, 'evening');
+          final isSelected = _dateStr == dateStr;
+          final free = _freeRoomsOn(dateStr);
+          final isFull = free <= 0;
+          final accent = isFull ? ChoyPalette.danger : ChoyPalette.success;
 
           return GestureDetector(
-            onTap: isFullyBooked ? null : () {
-              setState(() {
-                _selectedDate = date;
-                // Avtomatik bo'sh slotni tanlash
-                if (!_isSlotAvailable(dateStr, _selectedSlot)) {
-                  _selectedSlot = _isSlotAvailable(dateStr, 'morning') ? 'morning' : 'evening';
-                }
-              });
-            },
+            onTap: isFull
+                ? null
+                : () => setState(() {
+                      _selectedDate = date;
+                      _selectedRoomId = null;
+                      _letAdminChoose = false;
+                    }),
             child: Container(
-              width: 75,
-              margin: const EdgeInsets.only(right: 12),
+              width: 68,
               decoration: BoxDecoration(
-                color: isSelected ? dateColor : dateColor.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(16),
-                border: isSelected ? Border.all(color: dateColor, width: 2) : null,
+                color: isSelected
+                    ? c.primary
+                    : (isFull
+                        ? c.surfaceVariant
+                        : c.surface),
+                borderRadius: ChoyRadius.all(ChoyRadius.lg),
+                border: Border.all(
+                    color: isSelected ? c.primary : c.border),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    DateFormat('EEE', 'uz').format(date).toUpperCase(),
+                    DateFormat('E', context.locale.languageCode)
+                        .format(date)
+                        .toUpperCase(),
                     style: TextStyle(
-                      color: isSelected ? Colors.white : dateColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
+                        color: isSelected ? Colors.white : c.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     date.day.toString(),
                     style: TextStyle(
-                      color: isSelected ? Colors.white : dateColor,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
+                        color: isSelected ? Colors.white : c.textPrimary,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    isFullyBooked ? 'Band' : '${morningCount + eveningCount} bo\'sh',
-                    style: TextStyle(
-                      color: isSelected ? Colors.white.withValues(alpha: 0.9) : dateColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.white : accent,
+                      shape: BoxShape.circle,
                     ),
-                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
@@ -338,395 +279,492 @@ class _BookingScreenState extends State<BookingScreen> {
     );
   }
 
-  Widget _buildColorLegend() {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      children: [
-        _buildLegendItem(const Color(0xFF4CAF50), 'Hammasi bo\'sh'),
-        _buildLegendItem(const Color(0xFFFFB300), 'Kechasi band'),
-        _buildLegendItem(const Color(0xFF78909C), 'Kunduzi band'),
-        _buildLegendItem(const Color(0xFFE53935), 'Hammasi band'),
-      ],
-    );
-  }
-
-  Widget _buildLegendItem(Color color, String label) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(3),
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(label, style: AppTextStyles.labelSmall),
-      ],
-    );
-  }
-
-  Widget _buildSlotSelector() {
-    final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
-    final morningAvailable = _isSlotAvailable(dateStr, 'morning');
-    final eveningAvailable = _isSlotAvailable(dateStr, 'evening');
-    final morningCount = _getAvailableRooms(dateStr, 'morning');
-    final eveningCount = _getAvailableRooms(dateStr, 'evening');
-
-    return Row(
-      children: [
-        // KUNDUZI
-        Expanded(
-          child: GestureDetector(
-            onTap: morningAvailable ? () => setState(() => _selectedSlot = 'morning') : null,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _selectedSlot == 'morning' && morningAvailable
-                    ? AppColors.primary
-                    : morningAvailable
-                        ? AppColors.surface
-                        : AppColors.surface.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _selectedSlot == 'morning' ? AppColors.primary : AppColors.border,
-                  width: _selectedSlot == 'morning' ? 2 : 1,
-                ),
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.wb_sunny,
-                    size: 32,
-                    color: _selectedSlot == 'morning' && morningAvailable
-                        ? Colors.white
-                        : morningAvailable
-                            ? const Color(0xFFFFB300)
-                            : AppColors.textLight,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'KUNDUZI',
+  Widget _buildSlotSelector(ChoyColors c) {
+    Widget tile(String slot, IconData icon, String title, String time) {
+      final selected = _selectedSlot == slot;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _selectedSlot = slot),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: ChoySpace.lg),
+            decoration: BoxDecoration(
+              color: selected ? c.primaryContainer : c.surface,
+              borderRadius: ChoyRadius.all(ChoyRadius.lg),
+              border: Border.all(
+                  color: selected ? c.primary : c.border,
+                  width: selected ? 1.6 : 1),
+            ),
+            child: Column(
+              children: [
+                Icon(icon,
+                    size: 28,
+                    color: selected ? c.primary : c.textMuted),
+                const SizedBox(height: 6),
+                Text(title,
                     style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: _selectedSlot == 'morning' && morningAvailable
-                          ? Colors.white
-                          : morningAvailable
-                              ? AppColors.textPrimary
-                              : AppColors.textLight,
-                    ),
-                  ),
-                  Text(
-                    '08:00 - 16:00',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _selectedSlot == 'morning' && morningAvailable
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: morningAvailable
-                          ? (_selectedSlot == 'morning' ? Colors.white.withValues(alpha: 0.2) : AppColors.success.withValues(alpha: 0.1))
-                          : AppColors.error.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      morningAvailable ? '$morningCount ta bo\'sh' : 'Band',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: morningAvailable
-                            ? (_selectedSlot == 'morning' ? Colors.white : AppColors.success)
-                            : AppColors.error,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+                        fontWeight: FontWeight.w700,
+                        color:
+                            selected ? c.primary : c.textPrimary)),
+                Text(time,
+                    style: TextStyle(fontSize: 12, color: c.textMuted)),
+              ],
             ),
           ),
         ),
-        const SizedBox(width: 12),
-        // KECHASI
-        Expanded(
-          child: GestureDetector(
-            onTap: eveningAvailable ? () => setState(() => _selectedSlot = 'evening') : null,
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _selectedSlot == 'evening' && eveningAvailable
-                    ? AppColors.primary
-                    : eveningAvailable
-                        ? AppColors.surface
-                        : AppColors.surface.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: _selectedSlot == 'evening' ? AppColors.primary : AppColors.border,
-                  width: _selectedSlot == 'evening' ? 2 : 1,
-                ),
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.nights_stay,
-                    size: 32,
-                    color: _selectedSlot == 'evening' && eveningAvailable
-                        ? Colors.white
-                        : eveningAvailable
-                            ? const Color(0xFF5C6BC0)
-                            : AppColors.textLight,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'KECHASI',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: _selectedSlot == 'evening' && eveningAvailable
-                          ? Colors.white
-                          : eveningAvailable
-                              ? AppColors.textPrimary
-                              : AppColors.textLight,
-                    ),
-                  ),
-                  Text(
-                    '16:00 - 00:00',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: _selectedSlot == 'evening' && eveningAvailable
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: eveningAvailable
-                          ? (_selectedSlot == 'evening' ? Colors.white.withValues(alpha: 0.2) : AppColors.success.withValues(alpha: 0.1))
-                          : AppColors.error.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      eveningAvailable ? '$eveningCount ta bo\'sh' : 'Band',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: eveningAvailable
-                            ? (_selectedSlot == 'evening' ? Colors.white : AppColors.success)
-                            : AppColors.error,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      );
+    }
+
+    return Row(
+      children: [
+        tile('morning', Icons.wb_sunny_rounded, 'time_slot_day'.tr(),
+            '08:00 - 16:00'),
+        const SizedBox(width: ChoySpace.md),
+        tile('evening', Icons.nights_stay_rounded, 'time_slot_night'.tr(),
+            '16:00 - 00:00'),
       ],
     );
   }
 
-  Widget _buildGuestCountSelector() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-      ),
+  Widget _buildGuestCount(ChoyColors c) {
+    return ChoyCard(
       child: Row(
         children: [
-          Text(
-            '$_guestCount kishi',
-            style: AppTextStyles.titleMedium,
-          ),
+          Icon(Icons.people_alt_rounded, color: c.primary),
+          const SizedBox(width: ChoySpace.md),
+          Text('$_guestCount ${'guests_short'.tr()}',
+              style: TextStyle(
+                  color: c.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16)),
           const Spacer(),
-          IconButton(
-            onPressed: _guestCount > 1 ? () => setState(() => _guestCount--) : null,
-            icon: Icon(
-              Icons.remove_circle_outline,
-              color: _guestCount > 1 ? AppColors.primary : AppColors.textLight,
-            ),
-          ),
-          Container(
+          _roundBtn(c, Icons.remove_rounded, _guestCount > 1, () {
+            setState(() {
+              _guestCount--;
+              if (_selectedRoomId != null &&
+                  !_selectableRooms.any((r) => r.id == _selectedRoomId)) {
+                _selectedRoomId = null;
+              }
+            });
+          }),
+          SizedBox(
             width: 40,
-            alignment: Alignment.center,
-            child: Text(
-              _guestCount.toString(),
-              style: AppTextStyles.titleLarge,
+            child: Text(_guestCount.toString(),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: c.textPrimary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18)),
+          ),
+          _roundBtn(c, Icons.add_rounded, _guestCount < 20, () {
+            setState(() {
+              _guestCount++;
+              if (_selectedRoomId != null &&
+                  !_selectableRooms.any((r) => r.id == _selectedRoomId)) {
+                _selectedRoomId = null;
+              }
+            });
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _roundBtn(ChoyColors c, IconData icon, bool enabled, VoidCallback onTap) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: ChoyRadius.all(ChoyRadius.pill),
+      child: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: enabled ? c.primaryContainer : c.surfaceVariant,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon,
+            size: 20, color: enabled ? c.primary : c.textMuted),
+      ),
+    );
+  }
+
+  Widget _buildRoomSelection(ChoyColors c) {
+    // Xonalar sozlanmagan — admin biriktiradi
+    if (_rooms.isEmpty) {
+      return ChoyCard(
+        child: Row(
+          children: [
+            Icon(Icons.info_outline_rounded, color: c.accent),
+            const SizedBox(width: ChoySpace.md),
+            Expanded(
+              child: Text('admin_will_assign_room'.tr(),
+                  style: TextStyle(color: c.textSecondary, fontSize: 13)),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final occ = _occupiedOn(_dateStr);
+    final selectable = _selectableRooms;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${selectable.length} ${'rooms_free_count'.tr()}',
+          style: TextStyle(
+              color: selectable.isEmpty ? ChoyPalette.danger : c.textMuted,
+              fontSize: 13,
+              fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: ChoySpace.md),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: ChoySpace.md,
+          crossAxisSpacing: ChoySpace.md,
+          childAspectRatio: 1.55,
+          children: _rooms.map((room) {
+            final isOccupied = occ.contains(room.id);
+            final tooSmall = room.capacity < _guestCount;
+            final disabled = isOccupied || tooSmall || room.isUnavailable;
+            final selected = _selectedRoomId == room.id;
+            return _RoomTile(
+              room: room,
+              selected: selected,
+              disabled: disabled,
+              isOccupied: isOccupied,
+              tooSmall: tooSmall,
+              onTap: disabled
+                  ? null
+                  : () => setState(() {
+                        _selectedRoomId = room.id;
+                        _letAdminChoose = false;
+                      }),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: ChoySpace.md),
+        // "Admin tanlasin" varianti (TZ Q3)
+        GestureDetector(
+          onTap: selectable.isEmpty
+              ? null
+              : () => setState(() {
+                    _letAdminChoose = true;
+                    _selectedRoomId = null;
+                  }),
+          child: Container(
+            padding: const EdgeInsets.all(ChoySpace.md),
+            decoration: BoxDecoration(
+              color: _letAdminChoose ? c.primaryContainer : c.surface,
+              borderRadius: ChoyRadius.all(ChoyRadius.md),
+              border: Border.all(
+                  color: _letAdminChoose ? c.primary : c.border,
+                  width: _letAdminChoose ? 1.6 : 1),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                    _letAdminChoose
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    color: _letAdminChoose ? c.primary : c.textMuted,
+                    size: 20),
+                const SizedBox(width: ChoySpace.md),
+                Expanded(
+                  child: Text('let_admin_choose'.tr(),
+                      style: TextStyle(
+                          color: c.textPrimary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14)),
+                ),
+              ],
             ),
           ),
-          IconButton(
-            onPressed: _guestCount < 20 ? () => setState(() => _guestCount++) : null,
-            icon: Icon(
-              Icons.add_circle_outline,
-              color: _guestCount < 20 ? AppColors.primary : AppColors.textLight,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContactFields(ChoyColors c) {
+    return Column(
+      children: [
+        TextField(
+          controller: _nameController,
+          decoration: InputDecoration(
+            labelText: 'your_name'.tr(),
+            prefixIcon: const Icon(Icons.person_outline_rounded),
+          ),
+        ),
+        const SizedBox(height: ChoySpace.md),
+        TextField(
+          controller: _phoneController,
+          keyboardType: TextInputType.phone,
+          decoration: InputDecoration(
+            labelText: 'your_phone'.tr(),
+            hintText: '+998 90 123 45 67',
+            prefixIcon: const Icon(Icons.phone_outlined),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSubmit(ChoyColors c) {
+    final hasRooms = _rooms.isNotEmpty;
+    final roomChosen = _selectedRoomId != null || _letAdminChoose;
+    final canSubmit = _freeRoomsOn(_dateStr) > 0 &&
+        (!hasRooms || roomChosen) &&
+        !_isSubmitting;
+
+    return ChoyButton(
+      label: 'confirm_booking'.tr(),
+      icon: Icons.event_available_rounded,
+      loading: _isSubmitting,
+      onPressed: canSubmit ? _submit : null,
+    );
+  }
+
+  Future<void> _submit() async {
+    final name = _nameController.text.trim();
+    final phone = _phoneController.text.replaceAll(' ', '').replaceAll('-', '');
+
+    if (name.isEmpty) {
+      _snack('your_name'.tr(), error: true);
+      return;
+    }
+    if (!RegExp(r'^\+998\d{9}$').hasMatch(phone)) {
+      _snack('phone_invalid'.tr(), error: true);
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      final user = await AuthService().getCurrentUserData();
+      if (user == null) {
+        _snack('not_authorized'.tr(), error: true);
+        setState(() => _isSubmitting = false);
+        return;
+      }
+
+      final now = DateTime.now();
+      RoomModel? room;
+      if (_selectedRoomId != null) {
+        room = _rooms.firstWhere((r) => r.id == _selectedRoomId);
+      }
+
+      final booking = BookingModel(
+        bookingId: '',
+        userId: user.userId,
+        choyxonaId: widget.choyxona.id,
+        choyxonaName: widget.choyxona.name,
+        bookingDate: _dateStr,
+        bookingTime: null,
+        duration: 480,
+        guestCount: _guestCount,
+        guestName: name,
+        guestPhone: phone,
+        guestEmail: user.email,
+        specialRequests: _specialRequestsController.text.trim(),
+        status: 'pending',
+        paymentStatus: 'unpaid',
+        paymentMethod: 'cash',
+        roomId: room?.id,
+        roomNumber: room?.number,
+        timeSlot: _selectedSlot,
+        hasOrder: false,
+        isRated: false,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      final error = await _bookingService.createBooking(booking);
+
+      if (!mounted) return;
+      if (error != null) {
+        _snack(error, error: true);
+        // Bandlik o'zgargan bo'lishi mumkin — qayta yuklaymiz
+        await _loadData();
+        setState(() => _isSubmitting = false);
+        return;
+      }
+
+      // Adminlarga xabar onBookingCreated Cloud Function orqali (server-side)
+      // yuboriladi — klient boshqa userlarni o'qimaydi.
+      if (!mounted) return;
+      _snack('booking_success'.tr());
+      Navigator.pop(context);
+    } catch (e) {
+      if (mounted) _snack('${'error'.tr()}: $e', error: true);
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  void _snack(String msg, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: error ? ChoyPalette.danger : ChoyPalette.success,
+      ),
+    );
+  }
+}
+
+/// Choyxona ma'lumot kartasi (bron sarlavhasi).
+class _ChoyxonaInfo extends StatelessWidget {
+  const _ChoyxonaInfo({required this.choyxona, required this.totalRooms});
+  final Choyxona choyxona;
+  final int totalRooms;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ChoyColors.of(context);
+    final img = choyxona.images.isNotEmpty &&
+            choyxona.images.first.startsWith('http')
+        ? choyxona.images.first
+        : null;
+    return ChoyCard(
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: ChoyRadius.all(ChoyRadius.md),
+            child: SizedBox(
+              width: 56,
+              height: 56,
+              child: img != null
+                  ? Image.network(img,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                          color: c.surfaceVariant,
+                          child: Icon(Icons.local_cafe_rounded,
+                              color: c.textMuted)))
+                  : Container(
+                      color: c.surfaceVariant,
+                      child: Icon(Icons.local_cafe_rounded,
+                          color: c.textMuted)),
+            ),
+          ),
+          const SizedBox(width: ChoySpace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(choyxona.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: c.textPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16)),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.meeting_room_rounded,
+                        size: 14, color: ChoyPalette.success),
+                    const SizedBox(width: 4),
+                    Text('$totalRooms ${'rooms_total'.tr()}',
+                        style: TextStyle(
+                            color: c.textSecondary, fontSize: 13)),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildSpecialRequestsField() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return TextField(
-      controller: _specialRequestsController,
-      maxLines: 3,
-      style: TextStyle(
-        color: isDark ? Colors.white : AppColors.textPrimary,
-      ),
-      decoration: InputDecoration(
-        hintText: 'special_requests_placeholder'.tr(),
-        hintStyle: TextStyle(color: isDark ? Colors.white54 : AppColors.textSecondary),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        filled: true,
-        fillColor: isDark ? AppColors.darkSurface : AppColors.surface,
-      ),
-    );
-  }
+/// Xona kartasi (sig'im + band/bo'sh holati — TZ B.5.2).
+class _RoomTile extends StatelessWidget {
+  const _RoomTile({
+    required this.room,
+    required this.selected,
+    required this.disabled,
+    required this.isOccupied,
+    required this.tooSmall,
+    required this.onTap,
+  });
 
-  Widget _buildBookButton() {
-    final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
-    final isAvailable = _isSlotAvailable(dateStr, _selectedSlot);
+  final RoomModel room;
+  final bool selected;
+  final bool disabled;
+  final bool isOccupied;
+  final bool tooSmall;
+  final VoidCallback? onTap;
 
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: isAvailable && !_isLoading ? _createBooking : null,
-        style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+  @override
+  Widget build(BuildContext context) {
+    final c = ChoyColors.of(context);
+    final Color accent = isOccupied
+        ? ChoyPalette.roomBusy
+        : (tooSmall ? ChoyPalette.roomUnavailable : ChoyPalette.roomFree);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Opacity(
+        opacity: disabled ? 0.55 : 1,
+        child: Container(
+          padding: const EdgeInsets.all(ChoySpace.md),
+          decoration: BoxDecoration(
+            color: selected ? c.primaryContainer : c.surface,
+            borderRadius: ChoyRadius.all(ChoyRadius.lg),
+            border: Border.all(
+              color: selected ? c.primary : c.border,
+              width: selected ? 1.8 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.meeting_room_rounded,
+                      size: 18, color: accent),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      room.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: c.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14),
+                    ),
+                  ),
+                  if (selected)
+                    Icon(Icons.check_circle_rounded,
+                        size: 18, color: c.primary),
+                ],
+              ),
+              const Spacer(),
+              Row(
+                children: [
+                  Icon(Icons.people_alt_rounded,
+                      size: 15, color: c.textMuted),
+                  const SizedBox(width: 4),
+                  Text('${room.capacity}',
+                      style: TextStyle(
+                          color: c.textSecondary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13)),
+                  const Spacer(),
+                  Text(
+                    isOccupied
+                        ? 'room_busy'.tr()
+                        : (tooSmall ? 'room_too_small'.tr() : 'room_free'.tr()),
+                    style: TextStyle(
+                        color: accent,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-        child: _isLoading
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-              )
-            : Text(
-                'confirm_booking'.tr(),
-                style: AppTextStyles.button,
-              ),
-      ),
-    );
-  }
-
-  Future<void> _createBooking() async {
-    final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
-    
-    if (!_isSlotAvailable(dateStr, _selectedSlot)) {
-      _showError('Bu vaqt uchun bo\'sh xona yo\'q');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final authService = AuthService();
-      final currentUser = await authService.getCurrentUserData();
-
-      if (currentUser == null) {
-        _showError('not_authorized'.tr());
-        setState(() => _isLoading = false);
-        return;
-      }
-
-      // Создать бронирование
-      final bookingData = {
-        'userId': currentUser.userId,
-        'choyxonaId': widget.choyxona.id,
-        'choyxonaName': widget.choyxona.name,
-        'bookingDate': dateStr,
-        'bookingTime': null,
-        'timeSlot': _selectedSlot, // 'morning' yoki 'evening'
-        'duration': 480,
-        'guestCount': _guestCount,
-        'guestName': currentUser.fullName.isNotEmpty ? currentUser.fullName : currentUser.email,
-        'guestPhone': currentUser.phone,
-        'guestEmail': currentUser.email,
-        'specialRequests': _specialRequestsController.text.trim(),
-        'status': 'pending',
-        'paymentStatus': 'unpaid',
-        'paymentMethod': 'cash',
-        'roomId': null,
-        'roomNumber': null,
-        'hasOrder': false,
-        'isRated': false,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      await FirebaseFirestore.instance.collection('bookings').add(bookingData);
-
-      // Уведомить админа
-      await _notifyAdmin(currentUser, dateStr);
-
-      if (mounted) {
-        _showSuccess('booking_success'.tr());
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      _showError('error'.tr() + ': $e');
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<void> _notifyAdmin(dynamic user, String dateStr) async {
-    try {
-      final adminsSnapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .where('choyxonaId', isEqualTo: widget.choyxona.id)
-          .where('role', whereIn: ['choyxona_admin', 'choyxona_owner'])
-          .get();
-
-      final slotText = _selectedSlot == 'morning' ? 'Kunduzi (08:00-16:00)' : 'Kechasi (16:00-00:00)';
-
-      for (var adminDoc in adminsSnapshot.docs) {
-        final adminId = adminDoc.id;
-        
-        await PushNotificationService().sendNotificationToUser(
-          userId: adminId,
-          title: 'Yangi bron! 📅',
-          body: '${user.fullName.isNotEmpty ? user.fullName : 'Mijoz'} ${widget.choyxona.name}ga $dateStr kuni $slotText uchun $_guestCount kishi bron qildi',
-          data: {
-            'type': 'new_booking',
-            'choyxonaId': widget.choyxona.id,
-          },
-        );
-      }
-    } catch (e) {
-      debugPrint('Error notifying admin: $e');
-    }
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.error,
-      ),
-    );
-  }
-
-  void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.success,
       ),
     );
   }

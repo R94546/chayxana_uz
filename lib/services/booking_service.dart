@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/booking_model.dart';
 import '../core/utils/error_handler.dart';
 
@@ -6,51 +7,85 @@ import '../core/utils/error_handler.dart';
 class BookingService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Создать новое бронирование
+  /// Идентификатор замка комнаты на день (одна комната = один день = одно бронирование)
+  String _roomLockId(String roomId, String bookingDate) => '${roomId}_$bookingDate';
+
+  /// Создать новое бронирование через server-authoritative callable-функцию.
+  ///
+  /// Замок комнаты (room_locks) и документ брони создаются на сервере (Admin SDK)
+  /// в транзакции — клиент не пишет в room_locks напрямую, что исключает подделку
+  /// замков и блокировку чужих комнат (DoS). userId выставляется сервером из
+  /// контекста аутентификации. Возвращает null при успехе или текст ошибки.
   Future<String?> createBooking(BookingModel booking) async {
+    // Локальная валидация — быстрая обратная связь (сервер валидирует повторно)
+    final validationError = BookingModel.validateBooking(
+      bookingDate: booking.bookingDate,
+      bookingTime: booking.bookingTime,
+      guestCount: booking.guestCount,
+      guestName: booking.guestName,
+      guestPhone: booking.guestPhone,
+    );
+    if (validationError != null) {
+      return validationError;
+    }
+
     try {
-      // Валидация
-      final validationError = BookingModel.validateBooking(
-        bookingDate: booking.bookingDate,
-        bookingTime: booking.bookingTime,
-        guestCount: booking.guestCount,
-        guestName: booking.guestName,
-        guestPhone: booking.guestPhone,
-      );
-
-      if (validationError != null) {
-        return validationError;
-      }
-
-      // Создаём документ
-      await _firestore.collection('bookings').add(booking.toMap());
-
-      // Обновляем счётчик бронирований у пользователя
-      await _firestore.collection('users').doc(booking.userId).update({
-        'totalBookings': FieldValue.increment(1),
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('createBooking');
+      await callable.call(<String, dynamic>{
+        'choyxonaId': booking.choyxonaId,
+        'choyxonaName': booking.choyxonaName,
+        'bookingDate': booking.bookingDate,
+        'timeSlot': booking.timeSlot,
+        'duration': booking.duration,
+        'guestCount': booking.guestCount,
+        'guestName': booking.guestName,
+        'guestPhone': booking.guestPhone,
+        'guestEmail': booking.guestEmail,
+        'specialRequests': booking.specialRequests,
+        'roomId': booking.roomId,
+        'roomNumber': booking.roomNumber,
       });
-
-      // Обновляем счётчик бронирований у чайханы
-      await _firestore.collection('choyxonas').doc(booking.choyxonaId).update({
-        'bookingCount': FieldValue.increment(1),
-      });
-
       return null; // Успех
+    } on FirebaseFunctionsException catch (e) {
+      return e.message ?? 'Bron yaratishda xatolik';
     } catch (e, stackTrace) {
       return ErrorHandler.getUserMessage(e, stackTrace: stackTrace);
     }
   }
 
+  /// Получить занятые комнаты (id) на конкретную дату для чайханы
+  Future<Set<String>> getOccupiedRoomIds(String choyxonaId, String bookingDate) async {
+    try {
+      final snapshot = await _firestore
+          .collection('room_locks')
+          .where('choyxonaId', isEqualTo: choyxonaId)
+          .where('bookingDate', isEqualTo: bookingDate)
+          .get();
+      return snapshot.docs
+          .map((d) => (d.data()['roomId'] as String?) ?? '')
+          .where((id) => id.isNotEmpty)
+          .toSet();
+    } catch (e, stackTrace) {
+      ErrorHandler.logError(e, stackTrace);
+      return {};
+    }
+  }
+
   /// Получить все бронирования пользователя
+  /// (orderBy убран — сортируем на клиенте, чтобы не требовать составной индекс)
   Future<List<BookingModel>> getBookingsByUser(String userId) async {
     try {
       final snapshot = await _firestore
           .collection('bookings')
           .where('userId', isEqualTo: userId)
-          .orderBy('createdAt', descending: true)
           .get();
 
-      return snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList();
+      final list = snapshot.docs
+          .map((doc) => BookingModel.fromFirestore(doc))
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return list;
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
       return [];
@@ -64,10 +99,13 @@ class BookingService {
           .collection('bookings')
           .where('userId', isEqualTo: userId)
           .where('status', whereIn: ['pending', 'confirmed'])
-          .orderBy('bookingDate')
           .get();
 
-      return snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList();
+      final list = snapshot.docs
+          .map((doc) => BookingModel.fromFirestore(doc))
+          .toList()
+        ..sort((a, b) => a.bookingDate.compareTo(b.bookingDate));
+      return list;
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
       return [];
@@ -80,10 +118,13 @@ class BookingService {
       final snapshot = await _firestore
           .collection('bookings')
           .where('choyxonaId', isEqualTo: choyxonaId)
-          .orderBy('bookingDate', descending: true)
           .get();
 
-      return snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList();
+      final list = snapshot.docs
+          .map((doc) => BookingModel.fromFirestore(doc))
+          .toList()
+        ..sort((a, b) => b.bookingDate.compareTo(a.bookingDate));
+      return list;
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
       return [];
@@ -97,13 +138,68 @@ class BookingService {
           .collection('bookings')
           .where('choyxonaId', isEqualTo: choyxonaId)
           .where('status', isEqualTo: 'pending')
-          .orderBy('createdAt', descending: true)
           .get();
 
-      return snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList();
+      final list = snapshot.docs
+          .map((doc) => BookingModel.fromFirestore(doc))
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return list;
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
       return [];
+    }
+  }
+
+  /// Подтвердить бронь, у которой комната уже выбрана пользователем
+  /// (замок room_locks уже стоит — просто меняем статус на confirmed).
+  Future<String?> confirmBooking(String bookingId) async {
+    try {
+      await _firestore.collection('bookings').doc(bookingId).update({
+        'status': 'confirmed',
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      return null;
+    } catch (e, stackTrace) {
+      return ErrorHandler.getUserMessage(e, stackTrace: stackTrace);
+    }
+  }
+
+  /// Подтвердить бронь и атомарно назначить комнату (для брони без комнаты —
+  /// «пусть выберет админ»). Ставит замок room_locks на день, чтобы вместимость
+  /// не нарушалась, и обновляет бронь (roomId/roomNumber + status=confirmed).
+  Future<String?> assignRoomAndConfirm({
+    required String bookingId,
+    required String roomId,
+    required String roomNumber,
+    required String choyxonaId,
+    required String bookingDate,
+  }) async {
+    try {
+      return await _firestore.runTransaction<String?>((tx) async {
+        final lockRef = _firestore
+            .collection('room_locks')
+            .doc(_roomLockId(roomId, bookingDate));
+        final lockSnap = await tx.get(lockRef);
+        if (lockSnap.exists) {
+          return 'Bu xona tanlangan kunga allaqachon band. Boshqa xona tanlang.';
+        }
+        tx.set(lockRef, {
+          'roomId': roomId,
+          'choyxonaId': choyxonaId,
+          'bookingDate': bookingDate,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        tx.update(_firestore.collection('bookings').doc(bookingId), {
+          'roomId': roomId,
+          'roomNumber': roomNumber,
+          'status': 'confirmed',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return null;
+      });
+    } catch (e, stackTrace) {
+      return ErrorHandler.getUserMessage(e, stackTrace: stackTrace);
     }
   }
 
@@ -164,7 +260,10 @@ class BookingService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // Если был назначен стол, освобождаем его
+      // Замок комнаты (room_locks) освобождается Cloud Function onBookingStatusChanged
+      // при переходе брони в статус cancelled — клиенту не нужны права на удаление.
+
+      // Если был назначен стол, освобождаем его (устаревшее)
       if (booking.tableId != null) {
         await _firestore.collection('tables').doc(booking.tableId).update({
           'status': 'free',
@@ -209,47 +308,65 @@ class BookingService {
     }
   }
 
-  /// Stream бронирований пользователя (real-time)
+  /// Stream бронирований пользователя (real-time, сортировка на клиенте)
   Stream<List<BookingModel>> streamUserBookings(String userId) {
     return _firestore
         .collection('bookings')
         .where('userId', isEqualTo: userId)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList());
+        .map((snapshot) => snapshot.docs
+            .map((doc) => BookingModel.fromFirestore(doc))
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
   }
 
-  /// Stream ожидающих бронирований (real-time)
+  /// Stream ожидающих бронирований (real-time, сортировка на клиенте)
   Stream<List<BookingModel>> streamPendingBookings(String choyxonaId) {
     return _firestore
         .collection('bookings')
         .where('choyxonaId', isEqualTo: choyxonaId)
         .where('status', isEqualTo: 'pending')
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => BookingModel.fromFirestore(doc)).toList());
+        .map((snapshot) => snapshot.docs
+            .map((doc) => BookingModel.fromFirestore(doc))
+            .toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
   }
 
-  /// Проверить доступность на дату и время
-  Future<bool> checkAvailability({
+  /// Проверить, есть ли свободные комнаты в чайхане на дату (вместимость = кол-во комнат)
+  Future<bool> hasAvailabilityOnDate({
     required String choyxonaId,
     required String bookingDate,
-    required String bookingTime,
   }) async {
     try {
-      final snapshot = await _firestore
-          .collection('bookings')
+      final roomsSnap = await _firestore
+          .collection('rooms')
           .where('choyxonaId', isEqualTo: choyxonaId)
-          .where('bookingDate', isEqualTo: bookingDate)
-          .where('bookingTime', isEqualTo: bookingTime)
-          .where('status', whereIn: ['pending', 'confirmed'])
           .get();
+      final totalRooms = roomsSnap.docs
+          .where((d) => (d.data()['status'] ?? 'free') != 'unavailable')
+          .length;
+      if (totalRooms == 0) return false;
 
-      // Если есть бронирования на это время, проверяем количество
-      // TODO: Добавить проверку вместимости чайханы
-      return snapshot.docs.length < 10; // Временное ограничение
+      final occupied = await getOccupiedRoomIds(choyxonaId, bookingDate);
+      return occupied.length < totalRooms;
+    } catch (e, stackTrace) {
+      ErrorHandler.logError(e, stackTrace);
+      return false;
+    }
+  }
+
+  /// Проверить, свободна ли конкретная комната на дату
+  Future<bool> isRoomAvailable({
+    required String roomId,
+    required String bookingDate,
+  }) async {
+    try {
+      final lock = await _firestore
+          .collection('room_locks')
+          .doc(_roomLockId(roomId, bookingDate))
+          .get();
+      return !lock.exists;
     } catch (e, stackTrace) {
       ErrorHandler.logError(e, stackTrace);
       return false;

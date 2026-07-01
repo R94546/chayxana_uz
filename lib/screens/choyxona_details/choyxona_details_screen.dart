@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
 import 'package:easy_localization/easy_localization.dart';
 
+import '../../core/design/choy_tokens.dart';
 import '../../models/choyxona_model.dart';
 import '../../services/favorites_service.dart';
 import '../../services/auth_service.dart';
@@ -33,16 +35,17 @@ class _ChoyxonaDetailsScreenState extends State<ChoyxonaDetailsScreen> {
   bool _isFavorite = false;
   double _scrollOffset = 0.0;
 
-  // 🎨 NEW DESIGN COLORS (matching HTML)
-  static const Color _background = Color(0xFFFDFBF7);
-  static const Color _foreground = Color(0xFF1C1C1E);
-  static const Color _primary = Color(0xFF0D9488);
+  // 🎨 Premium choyxona palitrasiga moslangan (ChoyPalette qiymatlari).
+  // Eslatma: bu ekran hozircha light; to'liq dark-mode migratsiya keyingi pass.
+  static const Color _background = ChoyPalette.cream;
+  static const Color _foreground = Color(0xFF231D16);
+  static const Color _primary = ChoyPalette.tea;
   static const Color _primaryForeground = Color(0xFFFFFFFF);
-  static const Color _secondary = Color(0xFFF59E0B);
-  static const Color _muted = Color(0xFFF0F3F5);
-  static const Color _mutedForeground = Color(0xFF64748B);
+  static const Color _secondary = ChoyPalette.gold;
+  static const Color _muted = ChoyPalette.sand;
+  static const Color _mutedForeground = ChoyPalette.clay;
   static const Color _card = Color(0xFFFFFFFF);
-  static const Color _border = Color(0xFFE2E8F0);
+  static const Color _border = Color(0xFFE7DECF);
 
   @override
   void initState() {
@@ -272,9 +275,7 @@ class _ChoyxonaDetailsScreenState extends State<ChoyxonaDetailsScreen> {
                 // Share Button
                 _buildHeaderButton(
                   icon: Icons.share_outlined,
-                  onTap: () {
-                    // TODO: Implement share
-                  },
+                  onTap: _shareChoyxona,
                 ),
               ],
             ),
@@ -408,8 +409,8 @@ class _ChoyxonaDetailsScreenState extends State<ChoyxonaDetailsScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '(${widget.choyxona.reviewCount}+ reviews)',
-                        style: const TextStyle(
+                        '(${widget.choyxona.reviewCount} ${'reviews'.tr()})',
+                        style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w500,
                           color: _mutedForeground,
@@ -700,7 +701,7 @@ class _ChoyxonaDetailsScreenState extends State<ChoyxonaDetailsScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '${widget.choyxona.reviewCount} reviews',
+                      '${widget.choyxona.reviewCount} ${'reviews'.tr()}',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.white.withOpacity(0.8),
@@ -940,6 +941,16 @@ class _ChoyxonaDetailsScreenState extends State<ChoyxonaDetailsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _shareChoyxona() async {
+    final ch = widget.choyxona;
+    final text = '${ch.name}\n'
+        '📍 ${ch.address.street}, ${ch.address.city}\n'
+        '⭐ ${ch.rating.toStringAsFixed(1)} (${ch.reviewCount} ${'reviews'.tr()})\n'
+        '📞 ${ch.contacts.phone}\n\n'
+        'Choyxona.uz';
+    await SharePlus.instance.share(ShareParams(text: text));
   }
 
   Future<void> _makePhoneCall(String phoneNumber) async {

@@ -187,7 +187,8 @@ class BookingModel {
     // Проверка, что бронирование не в прошлом
     try {
       final dateParts = bookingDate.split('-');
-      final timeParts = bookingTime.split(':');
+      // Kun-asosli bron uchun vaqt ixtiyoriy; bo'lmasa kun oxiri olinadi
+      final timeParts = (bookingTime ?? '23:59').split(':');
 
       final bookingDateTime = DateTime(
         int.parse(dateParts[0]),

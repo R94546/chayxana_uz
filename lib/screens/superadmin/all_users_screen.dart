@@ -36,7 +36,6 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
               const PopupMenuItem(value: 'all', child: Text('Все')),
               const PopupMenuItem(value: 'client', child: Text('Клиенты')),
               const PopupMenuItem(value: 'choyxona_admin', child: Text('Админы чайхан')),
-              const PopupMenuItem(value: 'choyxona_owner', child: Text('Владельцы чайхан')),
             ],
           ),
         ],
@@ -158,8 +157,8 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
                 color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
               ),
             ),
-            // Choyxona nomi (admin va owner uchun)
-            if ((user.role == 'choyxona_admin' || user.role == 'choyxona_owner') && user.choyxonaId != null) ...[
+            // Choyxona nomi (admin uchun)
+            if (user.role == 'choyxona_admin' && user.choyxonaId != null) ...[
               const SizedBox(height: 4),
               FutureBuilder<String>(
                 future: _getChoyxonaName(user.choyxonaId!),
@@ -241,10 +240,6 @@ class _AllUsersScreenState extends State<AllUsersScreen> {
       case UserRole.choyxonaAdmin:
         color = Colors.purple;
         text = 'Админ';
-        break;
-      case UserRole.choyxonaOwner:
-        color = Colors.orange;
-        text = 'Владелец';
         break;
       default:
         color = AppColors.info;

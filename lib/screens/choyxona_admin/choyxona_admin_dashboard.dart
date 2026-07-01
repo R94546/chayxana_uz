@@ -2,25 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:provider/provider.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_text_styles.dart';
+import '../../core/design/choy_tokens.dart';
+import '../../core/design/choy_components.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../services/auth_service.dart';
 import '../../models/user_model.dart';
 import '../auth/login_screen.dart';
 import '../owner/menu_management_screen.dart';
-import '../owner/tables_management_screen.dart';
+import 'rooms_management_screen.dart';
 import 'choyxona_bookings_screen.dart';
-import 'choyxona_analytics_screen.dart';
 import 'choyxona_reviews_screen.dart';
-import '../owner/edit_choyxona_screen.dart'; // Import Edit Screen
-import '../../services/data_sync_provider.dart'; // Import Data Sync
+import '../owner/edit_choyxona_screen.dart';
 import '../promotions/promotion_editor_screen.dart';
 import '../reports/reports_screen.dart';
-import '../reports/cash_register_report_screen.dart';
 import 'combined_analytics_screen.dart';
 
-/// Dashboard для администраторов чайханы
+/// 🍵 Admin dashboard — premium choyxona redizayn (Faza 4).
 class ChoyxonaAdminDashboard extends StatefulWidget {
   const ChoyxonaAdminDashboard({super.key});
 
@@ -43,20 +40,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
   Future<void> _loadData() async {
     try {
       final user = await AuthService().getCurrentUserData();
-      
-      // DEBUG: Выводим информацию о пользователе
-      print('=== ChoyxonaAdminDashboard DEBUG ===');
-      print('User loaded: ${user != null}');
-      if (user != null) {
-        print('User ID: ${user.userId}');
-        print('User Email: ${user.email}');
-        print('User Role: ${user.role}');
-        print('ChoyxonaId: "${user.choyxonaId}"');
-        print('ChoyxonaId is null: ${user.choyxonaId == null}');
-        print('ChoyxonaId isEmpty: ${user.choyxonaId?.isEmpty ?? true}');
-      }
-      print('=====================================');
-      
+
       if (user == null || user.choyxonaId == null || user.choyxonaId!.isEmpty) {
         setState(() {
           _user = user;
@@ -65,14 +49,13 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
         return;
       }
 
-
       // Загрузить данные чайханы
       final choyxonaDoc = await FirebaseFirestore.instance
           .collection('choyxonas')
           .doc(user.choyxonaId)
           .get();
 
-      // Статистика - оборачиваем в try-catch чтобы ошибки индексов не ломали загрузку
+      // Статистика — оборачиваем в try-catch чтобы ошибки индексов не ломали загрузку
       int todayBookingsCount = 0;
       int pendingBookingsCount = 0;
       int totalBookingsCount = 0;
@@ -82,20 +65,19 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
         final now = DateTime.now();
         final todayStart = DateTime(now.year, now.month, now.day);
 
-        // Бронирования сегодня - может требовать индекс
         try {
           final todayBookings = await FirebaseFirestore.instance
               .collection('bookings')
               .where('choyxonaId', isEqualTo: user.choyxonaId)
-              .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart))
+              .where('createdAt',
+                  isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart))
               .count()
               .get();
           todayBookingsCount = todayBookings.count ?? 0;
         } catch (e) {
-          print('Today bookings query failed (index may be needed): $e');
+          debugPrint('Today bookings query failed (index may be needed): $e');
         }
 
-        // Ожидающие подтверждения
         try {
           final pendingBookings = await FirebaseFirestore.instance
               .collection('bookings')
@@ -105,10 +87,9 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
               .get();
           pendingBookingsCount = pendingBookings.count ?? 0;
         } catch (e) {
-          print('Pending bookings query failed: $e');
+          debugPrint('Pending bookings query failed: $e');
         }
 
-        // Всего бронирований
         try {
           final totalBookings = await FirebaseFirestore.instance
               .collection('bookings')
@@ -117,10 +98,9 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
               .get();
           totalBookingsCount = totalBookings.count ?? 0;
         } catch (e) {
-          print('Total bookings query failed: $e');
+          debugPrint('Total bookings query failed: $e');
         }
 
-        // Отзывы
         try {
           final reviews = await FirebaseFirestore.instance
               .collection('reviews')
@@ -129,10 +109,10 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
               .get();
           reviewsCount = reviews.count ?? 0;
         } catch (e) {
-          print('Reviews query failed: $e');
+          debugPrint('Reviews query failed: $e');
         }
       } catch (e) {
-        print('Stats loading error: $e');
+        debugPrint('Stats loading error: $e');
       }
 
       setState(() {
@@ -148,233 +128,168 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
         _isLoading = false;
       });
     } catch (e) {
-      print('Error loading data: $e');
+      debugPrint('Error loading data: $e');
       setState(() => _isLoading = false);
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final c = ChoyColors.of(context);
 
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        backgroundColor: c.background,
+        body: Center(child: CircularProgressIndicator(color: c.primary)),
       );
     }
 
-    if (_user == null || _user!.choyxonaId == null || _user!.choyxonaId!.isEmpty) {
+    if (_user == null ||
+        _user!.choyxonaId == null ||
+        _user!.choyxonaId!.isEmpty) {
       return Scaffold(
+        backgroundColor: c.background,
         appBar: AppBar(
-          title: const Text('Панель управления'),
+          title: Text('admin_panel'.tr()),
           automaticallyImplyLeading: false,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.logout),
-              onPressed: _handleLogout,
-            ),
-          ],
         ),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.error_outline, size: 64, color: AppColors.error),
-              const SizedBox(height: 16),
-              Text(
-                'Вы не привязаны к чайхане',
-                style: AppTextStyles.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Обратитесь к Super Admin',
-                style: TextStyle(
-                  color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: _handleLogout,
-                icon: const Icon(Icons.logout),
-                label: const Text('Выйти'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).primaryColor,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
+        body: ChoyEmptyState(
+          icon: Icons.link_off_rounded,
+          title: 'not_bound_title'.tr(),
+          message: 'not_bound_msg'.tr(),
+          action: ChoyButton(
+            label: 'logout'.tr(),
+            icon: Icons.logout_rounded,
+            variant: ChoyButtonVariant.ghost,
+            expanded: false,
+            onPressed: _handleLogout,
           ),
         ),
       );
     }
 
-    final isViewOnly = _user!.isViewOnly;
-
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: c.background,
       appBar: AppBar(
-        title: Text(_choyxona['name'] ?? 'Моя чайхана'),
-        centerTitle: false,
+        title: Text(_choyxona['name'] ?? 'my_choyxona'.tr()),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh_rounded),
             onPressed: () {
               setState(() => _isLoading = true);
               _loadData();
             },
           ),
           IconButton(
-            icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
-            onPressed: () {
-              Provider.of<ThemeProvider>(context, listen: false).toggleTheme();
-            },
+            icon: Icon(c.isDark
+                ? Icons.light_mode_rounded
+                : Icons.dark_mode_rounded),
+            onPressed: () => Provider.of<ThemeProvider>(context, listen: false)
+                .toggleTheme(),
           ),
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout_rounded),
             onPressed: _handleLogout,
           ),
         ],
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: AppColors.getBackgroundGradient(isDark),
-        ),
-        child: RefreshIndicator(
-          onRefresh: _loadData,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Роль пользователя
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isViewOnly
-                        ? Colors.orange.withOpacity(0.1)
-                        : Colors.purple.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isViewOnly ? Colors.orange : Colors.purple,
-                    ),
-                  ),
-                  child: Text(
-                    isViewOnly ? 'view_only_mode'.tr() : 'admin_mode'.tr(),
-                    style: TextStyle(
-                      color: isViewOnly ? Colors.orange : Colors.purple,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // Статистика
-                _buildStatsGrid(isDark),
-                const SizedBox(height: 24),
-
-                // Ожидающие брони (alert)
-                if ((_stats['pendingBookings'] ?? 0) > 0)
-                  _buildPendingAlert(isDark),
-
-                // Меню управления
-                Text(
-                  'management'.tr(),
-                  style: AppTextStyles.titleLarge.copyWith(
-                    color: AppColors.getTextPrimary(isDark),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _buildMenuGrid(context, isDark, isViewOnly),
-              ],
+      body: RefreshIndicator(
+        color: c.primary,
+        onRefresh: _loadData,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(ChoySpace.lg),
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ChoyStatusBadge(
+                label: 'admin_mode'.tr(),
+                tone: ChoyStatusTone.info,
+                icon: Icons.shield_outlined,
+              ),
             ),
-          ),
+            const SizedBox(height: ChoySpace.lg),
+            _buildStatsGrid(c),
+            const SizedBox(height: ChoySpace.xl),
+            if ((_stats['pendingBookings'] ?? 0) > 0) _buildPendingAlert(c),
+            ChoySectionHeader(title: 'management'.tr()),
+            const SizedBox(height: ChoySpace.md),
+            _buildMenuGrid(context),
+            const SizedBox(height: ChoySpace.xl),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildStatsGrid(bool isDark) {
+  Widget _buildStatsGrid(ChoyColors c) {
     return GridView.count(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisCount: 2,
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.5,
+      crossAxisSpacing: ChoySpace.md,
+      mainAxisSpacing: ChoySpace.md,
+      childAspectRatio: 1.6,
       children: [
-        _buildStatCard(
-          icon: Icons.today,
-          title: 'Сегодня',
-          value: '${_stats['todayBookings'] ?? 0}',
-          color: AppColors.getPrimary(isDark),
-          isDark: isDark,
-        ),
-        _buildStatCard(
-          icon: Icons.hourglass_empty,
-          title: 'Ожидают',
-          value: '${_stats['pendingBookings'] ?? 0}',
-          color: AppColors.warning,
-          isDark: isDark,
-        ),
-        _buildStatCard(
-          icon: Icons.calendar_month,
-          title: 'Всего',
-          value: '${_stats['totalBookings'] ?? 0}',
-          color: AppColors.success,
-          isDark: isDark,
-        ),
-        _buildStatCard(
-          icon: Icons.star,
-          title: 'Рейтинг',
-          value: (_stats['rating'] as num?)?.toStringAsFixed(1) ?? '0.0',
-          subtitle: '${_stats['reviewsCount'] ?? 0} отзывов',
-          color: AppColors.starGold,
-          isDark: isDark,
-        ),
+        _statCard(c,
+            icon: Icons.today_rounded,
+            title: 'today'.tr(),
+            value: '${_stats['todayBookings'] ?? 0}',
+            color: c.primary),
+        _statCard(c,
+            icon: Icons.hourglass_top_rounded,
+            title: 'pending'.tr(),
+            value: '${_stats['pendingBookings'] ?? 0}',
+            color: ChoyPalette.warning),
+        _statCard(c,
+            icon: Icons.calendar_month_rounded,
+            title: 'total'.tr(),
+            value: '${_stats['totalBookings'] ?? 0}',
+            color: ChoyPalette.success),
+        _statCard(c,
+            icon: Icons.star_rounded,
+            title: 'rating'.tr(),
+            value: (_stats['rating'] as num?)?.toStringAsFixed(1) ?? '0.0',
+            subtitle: '${_stats['reviewsCount'] ?? 0} ${'reviews'.tr()}',
+            color: ChoyPalette.star),
       ],
     );
   }
 
-  Widget _buildStatCard({
+  Widget _statCard(
+    ChoyColors c, {
     required IconData icon,
     required String title,
     required String value,
     String? subtitle,
     required Color color,
-    required bool isDark,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.getCardBg(isDark),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isDark ? AppColors.darkCardBorder : color.withOpacity(0.3)),
-      ),
+    return ChoyCard(
+      padding: const EdgeInsets.all(ChoySpace.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(icon, color: color, size: 24),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: ChoyRadius.all(ChoyRadius.md),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                value,
-                style: AppTextStyles.titleLarge.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                subtitle ?? title,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.getTextSecondary(isDark),
-                ),
-              ),
+              Text(value,
+                  style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800)),
+              Text(subtitle ?? title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: c.textMuted)),
             ],
           ),
         ],
@@ -382,8 +297,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
     );
   }
 
-  Widget _buildPendingAlert(bool isDark) {
-    // Use StreamBuilder for real-time updates
+  Widget _buildPendingAlert(ChoyColors c) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('bookings')
@@ -392,157 +306,135 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
           .snapshots(),
       builder: (context, snapshot) {
         final pendingCount = snapshot.data?.docs.length ?? 0;
-        
-        if (pendingCount == 0) {
-          return const SizedBox.shrink();
-        }
-        
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.warning.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.warning),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.notifications_active, color: AppColors.warning),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$pendingCount ta bron kutilmoqda',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const Text(
-                      'Tasdiqlash yoki rad etish uchun bosing',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ],
-                ),
+        if (pendingCount == 0) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: ChoySpace.lg),
+          child: ChoyCard(
+            color: ChoyPalette.warning.withValues(alpha: 0.10),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    ChoyxonaBookingsScreen(choyxonaId: _user!.choyxonaId!),
               ),
-              IconButton(
-                icon: const Icon(Icons.arrow_forward),
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ChoyxonaBookingsScreen(choyxonaId: _user!.choyxonaId!),
+            ).then((_) => _loadData()),
+            child: Row(
+              children: [
+                const Icon(Icons.notifications_active_rounded,
+                    color: ChoyPalette.warning),
+                const SizedBox(width: ChoySpace.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'pending_bookings_waiting'.tr(args: ['$pendingCount']),
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700, color: c.textPrimary),
+                      ),
+                      Text('tap_to_review'.tr(),
+                          style: TextStyle(
+                              fontSize: 12, color: c.textSecondary)),
+                    ],
                   ),
-                ).then((_) => _loadData()),
-              ),
-            ],
+                ),
+                Icon(Icons.chevron_right_rounded, color: c.textMuted),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildMenuGrid(BuildContext context, bool isDark, bool isViewOnly) {
-    final menuItems = [
+  Widget _buildMenuGrid(BuildContext context) {
+    final id = _user!.choyxonaId!;
+    final name = _choyxona['name'] ?? '';
+    final menuItems = <Map<String, dynamic>>[
       {
-        'icon': Icons.calendar_today,
-        'title': 'Бронирования',
-        'color': Theme.of(context).primaryColor,
+        'icon': Icons.calendar_today_rounded,
+        'title': 'bookings'.tr(),
+        'color': ChoyPalette.tea,
         'onTap': () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ChoyxonaBookingsScreen(choyxonaId: _user!.choyxonaId!),
-          ),
-        ),
-      },
-      if (!isViewOnly) {
-        'icon': Icons.restaurant_menu,
-        'title': 'Меню',
-        'color': AppColors.success,
-        'onTap': () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => MenuManagementScreen(
-              choyxonaId: _user!.choyxonaId!,
-              choyxonaName: _choyxona['name'] ?? '',
-            ),
-          ),
-        ),
-      },
-      if (!isViewOnly) {
-        'icon': Icons.table_bar,
-        'title': 'Xonalar',
-        'color': AppColors.info,
-        'onTap': () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TablesManagementScreen(choyxonaId: _user!.choyxonaId!),
-          ),
-        ),
+              context,
+              MaterialPageRoute(
+                  builder: (_) => ChoyxonaBookingsScreen(choyxonaId: id)),
+            ).then((_) => _loadData()),
       },
       {
-        'icon': Icons.star,
-        'title': 'Отзывы',
-        'color': AppColors.starGold,
+        'icon': Icons.restaurant_menu_rounded,
+        'title': 'menu'.tr(),
+        'color': ChoyPalette.success,
         'onTap': () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ChoyxonaReviewsScreen(choyxonaId: _user!.choyxonaId!),
-          ),
-        ),
+              context,
+              MaterialPageRoute(
+                  builder: (_) =>
+                      MenuManagementScreen(choyxonaId: id, choyxonaName: name)),
+            ),
       },
       {
-        'icon': Icons.analytics,
-        'title': 'Tahlil & Kassa',
-        'color': Colors.purple,
+        'icon': Icons.meeting_room_rounded,
+        'title': 'rooms_management'.tr(),
+        'color': ChoyPalette.info,
         'onTap': () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => CombinedAnalyticsScreen(
-              choyxonaId: _user!.choyxonaId!,
-              choyxonaName: _choyxona['name'] ?? '',
+              context,
+              MaterialPageRoute(
+                  builder: (_) => RoomsManagementScreen(choyxonaId: id)),
             ),
-          ),
-        ),
       },
-      if (!isViewOnly) {
-        'icon': Icons.settings,
-        'title': 'Инфо',
-        'color': AppColors.getTextSecondary(isDark),
+      {
+        'icon': Icons.star_rounded,
+        'title': 'reviews'.tr(),
+        'color': ChoyPalette.gold,
         'onTap': () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => EditChoyxonaScreen(
-              choyxonaId: _user!.choyxonaId!,
-              choyxonaData: _choyxona,
+              context,
+              MaterialPageRoute(
+                  builder: (_) => ChoyxonaReviewsScreen(choyxonaId: id)),
             ),
-          ),
-        ).then((_) => _loadData()),
       },
-      if (!isViewOnly) {
-        'icon': Icons.local_offer,
+      {
+        'icon': Icons.analytics_rounded,
+        'title': 'analytics_cashier'.tr(),
+        'color': const Color(0xFF8B5CF6),
+        'onTap': () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => CombinedAnalyticsScreen(
+                      choyxonaId: id, choyxonaName: name)),
+            ),
+      },
+      {
+        'icon': Icons.info_outline_rounded,
+        'title': 'info'.tr(),
+        'color': ChoyPalette.clay,
+        'onTap': () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => EditChoyxonaScreen(
+                      choyxonaId: id, choyxonaData: _choyxona)),
+            ).then((_) => _loadData()),
+      },
+      {
+        'icon': Icons.local_offer_rounded,
         'title': 'promotions'.tr(),
-        'color': AppColors.warning,
+        'color': ChoyPalette.warning,
         'onTap': () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => PromotionEditorScreen(
-              choyxonaId: _user!.choyxonaId!,
+              context,
+              MaterialPageRoute(
+                  builder: (_) => PromotionEditorScreen(choyxonaId: id)),
             ),
-          ),
-        ),
       },
-      if (!isViewOnly) {
-        'icon': Icons.picture_as_pdf,
+      {
+        'icon': Icons.receipt_long_rounded,
         'title': 'reports'.tr(),
-        'color': Colors.red,
+        'color': ChoyPalette.teaDark,
         'onTap': () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ReportsScreen(
-              choyxonaId: _user!.choyxonaId!,
-              choyxonaName: _choyxona['name'] ?? '',
+              context,
+              MaterialPageRoute(
+                  builder: (_) =>
+                      ReportsScreen(choyxonaId: id, choyxonaName: name)),
             ),
-          ),
-        ),
       },
     ];
 
@@ -551,60 +443,53 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 1.4,
+        crossAxisSpacing: ChoySpace.md,
+        mainAxisSpacing: ChoySpace.md,
+        childAspectRatio: 1.5,
       ),
       itemCount: menuItems.length,
       itemBuilder: (context, index) {
         final item = menuItems[index];
-        return _buildMenuTile(
+        return _menuTile(
           icon: item['icon'] as IconData,
           title: item['title'] as String,
           color: item['color'] as Color,
           onTap: item['onTap'] as VoidCallback,
-          isDark: isDark,
         );
       },
     );
   }
 
-  Widget _buildMenuTile({
+  Widget _menuTile({
     required IconData icon,
     required String title,
     required Color color,
     required VoidCallback onTap,
-    required bool isDark,
   }) {
-    return InkWell(
+    final c = ChoyColors.of(context);
+    return ChoyCard(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.getCardBg(isDark),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: color, size: 24),
+      padding: const EdgeInsets.all(ChoySpace.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: ChoyRadius.all(ChoyRadius.md),
             ),
-            Text(
-              title,
-              style: AppTextStyles.titleMedium.copyWith(
-                color: AppColors.getTextPrimary(isDark),
-              ),
-            ),
-          ],
-        ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          Text(title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: c.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15)),
+        ],
       ),
     );
   }
@@ -612,18 +497,18 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
   Future<void> _handleLogout() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Выйти?'),
-        content: const Text('Вы уверены что хотите выйти?'),
+      builder: (ctx) => AlertDialog(
+        title: Text('logout'.tr()),
+        content: Text('logout_confirm'.tr()),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('cancel'.tr()),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            child: const Text('Выйти'),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('logout'.tr(),
+                style: const TextStyle(color: ChoyPalette.danger)),
           ),
         ],
       ),
@@ -631,6 +516,7 @@ class _ChoyxonaAdminDashboardState extends State<ChoyxonaAdminDashboard> {
 
     if (confirmed == true && mounted) {
       await AuthService().signOut();
+      if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const LoginScreen()),
         (route) => false,

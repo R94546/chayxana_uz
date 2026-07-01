@@ -6,7 +6,6 @@ import '../auth/login_screen.dart';
 import '../superadmin/super_admin_dashboard.dart';
 import '../choyxona_admin/choyxona_admin_dashboard.dart';
 import '../../services/auth_service.dart';
-import '../../models/user_model.dart';
 
 /// Splash Screen в стиле Grok (чёрный фон, минималистичная анимация)
 class SplashScreen extends StatefulWidget {

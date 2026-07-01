@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart';
+import '../../core/design/choy_tokens.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../services/auth_service.dart';
@@ -69,7 +71,6 @@ class _LoginScreenState extends State<LoginScreen> {
           destination = const SuperAdminDashboard();
           break;
         case UserRole.choyxonaAdmin:
-        case UserRole.choyxonaOwner:
           destination = const ChoyxonaAdminDashboard();
           break;
         default:
@@ -88,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: AppColors.error,
+        backgroundColor: ChoyPalette.danger,
       ),
     );
   }
@@ -140,9 +141,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: TextButton(
                                 onPressed: _handleForgotPassword,
                                 child: Text(
-                                  'Parolni unutdingizmi?',
+                                  'forgot_password'.tr(),
                                   style: AppTextStyles.labelMedium.copyWith(
-                                    color: AppColors.emeraldGreen,
+                                    color: ChoyPalette.teaLight,
                                   ),
                                 ),
                               ),
@@ -162,7 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 16),
                                   child: Text(
-                                    'yoki',
+                                    'or_divider'.tr(),
                                     style: AppTextStyles.bodySmall.copyWith(color: Colors.white70),
                                   ),
                                 ),
@@ -179,7 +180,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Text(
-                                    'Akkauntingiz yo\'qmi? ',
+                                    'no_account'.tr(),
                                     style: AppTextStyles.bodyMedium.copyWith(color: Colors.white70),
                                   ),
                                   TextButton(
@@ -191,9 +192,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                       );
                                     },
                                     child: Text(
-                                      'Ro\'yxatdan o\'tish',
+                                      'register'.tr(),
                                       style: AppTextStyles.labelMedium.copyWith(
-                                        color: AppColors.emeraldGreen,
+                                        color: ChoyPalette.teaLight,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
@@ -226,7 +227,7 @@ class _LoginScreenState extends State<LoginScreen> {
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: AppColors.emeraldGreen.withOpacity(0.3),
+                color: ChoyPalette.teaLight.withOpacity(0.3),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -244,7 +245,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 24),
 
         Text(
-          'Xush kelibsiz!',
+          'welcome_back'.tr(),
           style: AppTextStyles.headlineLarge.copyWith(color: Colors.white),
           textAlign: TextAlign.center,
         ),
@@ -252,7 +253,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 8),
 
         Text(
-          'Davom etish uchun tizimga kiring',
+          'login_subtitle'.tr(),
           style: AppTextStyles.bodyLarge.copyWith(
             color: Colors.white70,
           ),
@@ -267,14 +268,14 @@ class _LoginScreenState extends State<LoginScreen> {
       controller: _emailController,
       keyboardType: TextInputType.text,
       textInputAction: TextInputAction.next,
-      decoration: const InputDecoration(
-        labelText: 'Telefon yoki Email',
-        hintText: '+998 90 123 45 67 yoki email@example.com',
-        prefixIcon: Icon(Icons.person_outline),
+      decoration: InputDecoration(
+        labelText: 'phone_or_email'.tr(),
+        hintText: 'phone_or_email_hint'.tr(),
+        prefixIcon: const Icon(Icons.person_outline),
       ),
       validator: (value) {
         if (value == null || value.isEmpty) {
-          return 'Telefon yoki email kiriting';
+          return 'enter_phone_or_email'.tr();
         }
         
         // Telefon yoki email formatini tekshirish
@@ -284,16 +285,16 @@ class _LoginScreenState extends State<LoginScreen> {
         if (cleanValue.startsWith('+') || RegExp(r'^[0-9]+$').hasMatch(cleanValue.replaceAll(' ', ''))) {
           final cleanPhone = cleanValue.replaceAll(RegExp(r'[^0-9]'), '');
           if (cleanPhone.length < 9) {
-            return 'Telefon raqami kamida 9 ta raqam bo\'lishi kerak';
+            return 'phone_min_digits'.tr();
           }
           if (cleanPhone.length > 12) {
-            return 'Telefon raqami juda uzun';
+            return 'phone_too_long'.tr();
           }
         } else {
           // Email formati
           final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
           if (!emailRegex.hasMatch(cleanValue)) {
-            return 'Noto\'g\'ri email formati';
+            return 'invalid_email'.tr();
           }
         }
         
@@ -309,7 +310,7 @@ class _LoginScreenState extends State<LoginScreen> {
       textInputAction: TextInputAction.done,
       onFieldSubmitted: (_) => _handleLogin(),
       decoration: InputDecoration(
-        labelText: 'Parol',
+        labelText: 'password'.tr(),
         hintText: '••••••••',
         prefixIcon: const Icon(Icons.lock_outline),
         suffixIcon: IconButton(
@@ -323,10 +324,10 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       validator: (value) {
         if (value == null || value.isEmpty) {
-          return 'Parolni kiriting';
+          return 'enter_password'.tr();
         }
         if (value.length < 6) {
-          return 'Parol kamida 6 ta belgidan iborat bo\'lishi kerak';
+          return 'password_min_6'.tr();
         }
         return null;
       },
@@ -339,7 +340,7 @@ class _LoginScreenState extends State<LoginScreen> {
       child: ElevatedButton(
         onPressed: _isLoading ? null : _handleLogin,
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.emeraldGreen, // Brand color
+          backgroundColor: ChoyPalette.teaLight, // Brand color
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -349,12 +350,12 @@ class _LoginScreenState extends State<LoginScreen> {
           height: 24,
           width: 24,
           child: CircularProgressIndicator(
-            color: AppColors.textWhite,
+            color: Colors.white,
             strokeWidth: 2,
           ),
         )
             : Text(
-          'Kirish',
+          'login'.tr(),
           style: AppTextStyles.button,
         ),
       ),
@@ -380,7 +381,7 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(result['message']),
-        backgroundColor: result['success'] ? AppColors.success : AppColors.error,
+        backgroundColor: result['success'] ? ChoyPalette.success : ChoyPalette.danger,
       ),
     );
   }
@@ -405,14 +406,14 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(
-        'Восстановление пароля',
+        'password_reset_title'.tr(),
         style: AppTextStyles.titleLarge,
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Введите email для восстановления пароля',
+            'password_reset_hint'.tr(),
             style: AppTextStyles.bodyMedium,
           ),
           const SizedBox(height: 16),
@@ -430,13 +431,13 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Отмена'),
+          child: Text('cancel'.tr()),
         ),
         ElevatedButton(
           onPressed: () {
             Navigator.pop(context, _emailController.text.trim());
           },
-          child: const Text('Отправить'),
+          child: Text('send'.tr()),
         ),
       ],
     );

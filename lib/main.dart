@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -23,19 +22,16 @@ void main() async {
   // Настройка background handler для FCM
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-  await initializeDateFormatting('ru', null);
+  await initializeDateFormatting('uz', null);
 
   // Инициализация easy_localization
   await EasyLocalization.ensureInitialized();
 
   // Инициализация push-уведомлений
   await NotificationService().initialize();
-  
+
   // Инициализация FCM Push уведомлений (запрос разрешений)
   await PushNotificationService().initialize();
-  
-  // ONE-TIME FIX: Remove extra quotes from admin choyxonaId
-  await _fixAdminChoyxonaId();
 
   // Инициализация глобального провайдера синхронизации данных
   final dataSyncProvider = DataSyncProvider();
@@ -43,9 +39,10 @@ void main() async {
 
   runApp(
     EasyLocalization(
-      supportedLocales: const [Locale('ru'), Locale('uz'), Locale('en')],
+      supportedLocales: const [Locale('uz'), Locale('ru'), Locale('en')],
       path: 'assets/translations',
-      fallbackLocale: const Locale('ru'),
+      startLocale: const Locale('uz'),
+      fallbackLocale: const Locale('uz'),
       child: MyApp(dataSyncProvider: dataSyncProvider),
     ),
   );
@@ -85,32 +82,5 @@ class MyApp extends StatelessWidget {
         },
       ),
     );
-  }
-}
-
-/// ONE-TIME FIX: Remove extra quotes from admin choyxonaId
-Future<void> _fixAdminChoyxonaId() async {
-  try {
-    final adminQuery = await FirebaseFirestore.instance
-        .collection('users')
-        .where('email', isEqualTo: 'admin@gmail.com')
-        .get();
-    
-    if (adminQuery.docs.isEmpty) return;
-    
-    final adminDoc = adminQuery.docs.first;
-    final data = adminDoc.data();
-    final currentChoyxonaId = data['choyxonaId'] as String?;
-    
-    if (currentChoyxonaId == null) return;
-    
-    // Remove extra quotes if present
-    if (currentChoyxonaId.startsWith('"') && currentChoyxonaId.endsWith('"')) {
-      final fixedId = currentChoyxonaId.substring(1, currentChoyxonaId.length - 1);
-      await adminDoc.reference.update({'choyxonaId': fixedId});
-      print('✅ Fixed admin choyxonaId: $fixedId');
-    }
-  } catch (e) {
-    print('Error fixing choyxonaId: $e');
   }
 }

@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:easy_localization/easy_localization.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_text_styles.dart';
+import 'package:flutter/material.dart';
 
-/// Экран отзывов чайханы для админа
+import '../../core/design/choy_components.dart';
+import '../../core/design/choy_tokens.dart';
+
+/// ⭐ Admin — choyxona sharhlari (redizayn + lokalizatsiya, Faza 4/5).
 class ChoyxonaReviewsScreen extends StatelessWidget {
   final String choyxonaId;
 
@@ -12,104 +13,75 @@ class ChoyxonaReviewsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
+    final c = ChoyColors.of(context);
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: const Text('Отзывы'),
-      ),
+      backgroundColor: c.background,
+      appBar: AppBar(title: Text('reviews'.tr())),
       body: StreamBuilder<QuerySnapshot>(
+        // orderBy убран (составной индекс) — сортируем на клиенте
         stream: FirebaseFirestore.instance
             .collection('reviews')
             .where('choyxonaId', isEqualTo: choyxonaId)
-            .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return Center(child: CircularProgressIndicator(color: c.primary));
           }
-
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return _buildEmptyState(isDark);
+            return ChoyEmptyState(
+              icon: Icons.star_border_rounded,
+              title: 'no_reviews'.tr(),
+              message: 'reviews_after_visits'.tr(),
+            );
           }
 
-          final reviews = snapshot.data!.docs;
+          final reviews = snapshot.data!.docs.toList()
+            ..sort((a, b) {
+              final at = (a.data() as Map)['createdAt'] as Timestamp?;
+              final bt = (b.data() as Map)['createdAt'] as Timestamp?;
+              if (at == null && bt == null) return 0;
+              if (at == null) return 1;
+              if (bt == null) return -1;
+              return bt.compareTo(at);
+            });
 
-          // Рассчитать средний рейтинг
           double avgRating = 0;
           for (final doc in reviews) {
-            avgRating += (doc.data() as Map)['rating'] ?? 0;
+            avgRating += ((doc.data() as Map)['rating'] ?? 0).toDouble();
           }
           avgRating = avgRating / reviews.length;
 
           return Column(
             children: [
-              // Общая статистика
               Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(20),
+                margin: const EdgeInsets.all(ChoySpace.lg),
+                padding: const EdgeInsets.all(ChoySpace.xl),
                 decoration: BoxDecoration(
-                  gradient: AppColors.primaryGradient,
-                  borderRadius: BorderRadius.circular(16),
+                  gradient: ChoyPalette.teaGradient,
+                  borderRadius: ChoyRadius.all(ChoyRadius.xl),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    Column(
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.star, color: Colors.white, size: 28),
-                            const SizedBox(width: 8),
-                            Text(
-                              avgRating.toStringAsFixed(1),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Средний рейтинг',
-                          style: TextStyle(color: Colors.white70, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                    Container(width: 1, height: 50, color: Colors.white24),
-                    Column(
-                      children: [
-                        Text(
-                          '${reviews.length}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Всего отзывов',
-                          style: TextStyle(color: Colors.white70, fontSize: 12),
-                        ),
-                      ],
-                    ),
+                    _stat('${avgRating.toStringAsFixed(1)} ★',
+                        'avg_rating'.tr()),
+                    Container(
+                        width: 1,
+                        height: 50,
+                        color: Colors.white.withValues(alpha: 0.25)),
+                    _stat('${reviews.length}', 'total_reviews'.tr()),
                   ],
                 ),
               ),
-
-              // Список отзывов
               Expanded(
                 child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: ChoySpace.lg),
                   itemCount: reviews.length,
-                  itemBuilder: (context, index) {
-                    final data = reviews[index].data() as Map<String, dynamic>;
-                    return _buildReviewCard(context, reviews[index].id, data, isDark);
-                  },
+                  itemBuilder: (context, index) => _ReviewCard(
+                    reviewId: reviews[index].id,
+                    data: reviews[index].data() as Map<String, dynamic>,
+                  ),
                 ),
               ),
             ],
@@ -119,127 +91,142 @@ class ChoyxonaReviewsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildReviewCard(BuildContext context, String id, Map<String, dynamic> data, bool isDark) {
+  Widget _stat(String value, String label) {
+    return Column(
+      children: [
+        Text(value,
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        Text(label,
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85), fontSize: 12)),
+      ],
+    );
+  }
+}
+
+class _ReviewCard extends StatelessWidget {
+  const _ReviewCard({required this.reviewId, required this.data});
+  final String reviewId;
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ChoyColors.of(context);
     final rating = (data['rating'] as num?)?.toDouble() ?? 0;
-    final comment = data['comment'] ?? '';
-    final userId = data['userId'] ?? '';
+    final comment = (data['comment'] ?? '').toString();
+    final userId = (data['userId'] ?? '').toString();
     final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
     final reply = data['reply'] as String?;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      color: isDark ? AppColors.darkSurface : AppColors.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: ChoySpace.md),
+      child: ChoyCard(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Автор
             FutureBuilder<DocumentSnapshot>(
-              future: FirebaseFirestore.instance.collection('users').doc(userId).get(),
+              future: userId.isEmpty
+                  ? null
+                  : FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(userId)
+                      .get(),
               builder: (context, snapshot) {
-                final name = snapshot.hasData
-                    ? '${snapshot.data?.get('firstName') ?? ''} ${snapshot.data?.get('lastName') ?? ''}'
-                    : 'Гость';
-
+                String name = 'guest'.tr();
+                if (snapshot.hasData && snapshot.data!.exists) {
+                  final d = snapshot.data!.data() as Map<String, dynamic>?;
+                  final full =
+                      '${d?['firstName'] ?? ''} ${d?['lastName'] ?? ''}'.trim();
+                  if (full.isNotEmpty) name = full;
+                }
                 return Row(
                   children: [
                     CircleAvatar(
                       radius: 20,
-                      backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                      backgroundColor: c.primaryContainer,
                       child: Text(
-                        name.trim().isNotEmpty ? name[0].toUpperCase() : 'Г',
-                        style: TextStyle(color: Theme.of(context).primaryColor),
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: TextStyle(
+                            color: c.primary, fontWeight: FontWeight.w700),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: ChoySpace.md),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            name.trim().isEmpty ? 'Гость' : name,
-                            style: AppTextStyles.titleMedium.copyWith(
-                              color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                            ),
-                          ),
+                          Text(name,
+                              style: TextStyle(
+                                  color: c.textPrimary,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15)),
                           if (createdAt != null)
                             Text(
                               DateFormat('dd.MM.yyyy').format(createdAt),
                               style: TextStyle(
-                                fontSize: 12,
-                                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-                              ),
+                                  fontSize: 12, color: c.textMuted),
                             ),
                         ],
                       ),
                     ),
-                    // Рейтинг
                     Row(
-                      children: List.generate(5, (i) => Icon(
-                        i < rating ? Icons.star : Icons.star_border,
-                        color: AppColors.starGold,
-                        size: 18,
-                      )),
+                      children: List.generate(
+                          5,
+                          (i) => Icon(
+                                i < rating
+                                    ? Icons.star_rounded
+                                    : Icons.star_border_rounded,
+                                color: ChoyPalette.star,
+                                size: 18,
+                              )),
                     ),
                   ],
                 );
               },
             ),
-
-            // Комментарий
             if (comment.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                comment,
-                style: TextStyle(
-                  color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-                ),
-              ),
+              const SizedBox(height: ChoySpace.md),
+              Text(comment, style: TextStyle(color: c.textPrimary)),
             ],
-
-            // Ответ чайханы
             if (reply != null && reply.isNotEmpty) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: ChoySpace.md),
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(ChoySpace.md),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).primaryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Theme.of(context).primaryColor.withOpacity(0.3)),
+                  color: c.primaryContainer,
+                  borderRadius: ChoyRadius.all(ChoyRadius.md),
+                  border: Border.all(color: c.primary.withValues(alpha: 0.3)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.reply, size: 16, color: Theme.of(context).primaryColor),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Ответ чайханы',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).primaryColor,
-                            fontSize: 12,
-                          ),
-                        ),
+                        Icon(Icons.reply_rounded, size: 16, color: c.primary),
+                        const SizedBox(width: 6),
+                        Text('choyxona_reply'.tr(),
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: c.primary,
+                                fontSize: 12)),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(reply),
+                    const SizedBox(height: 6),
+                    Text(reply, style: TextStyle(color: c.textSecondary)),
                   ],
                 ),
               ),
             ],
-
-            // Кнопка ответа
             if (reply == null || reply.isEmpty) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: ChoySpace.sm),
               TextButton.icon(
-                onPressed: () => _showReplyDialog(context, id),
-                icon: const Icon(Icons.reply, size: 18),
-                label: const Text('Ответить'),
+                onPressed: () => _showReplyDialog(context),
+                icon: const Icon(Icons.reply_rounded, size: 18),
+                label: Text('reply'.tr()),
               ),
             ],
           ],
@@ -248,62 +235,39 @@ class ChoyxonaReviewsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyState(bool isDark) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.star_border, size: 64, color: AppColors.textLight),
-          const SizedBox(height: 16),
-          Text('Нет отзывов', style: AppTextStyles.titleMedium),
-          const SizedBox(height: 8),
-          Text(
-            'Отзывы появятся после посещений',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showReplyDialog(BuildContext context, String reviewId) {
+  void _showReplyDialog(BuildContext context) {
     final controller = TextEditingController();
-
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Ответить на отзыв'),
+      builder: (dialogContext) => AlertDialog(
+        title: Text('reply_to_review'.tr()),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(
-            hintText: 'Напишите ваш ответ...',
-            border: OutlineInputBorder(),
-          ),
+          decoration: InputDecoration(hintText: 'write_reply'.tr()),
           maxLines: 3,
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text('cancel'.tr()),
           ),
           ElevatedButton(
             onPressed: () async {
               if (controller.text.trim().isEmpty) return;
-
               await FirebaseFirestore.instance
                   .collection('reviews')
                   .doc(reviewId)
                   .update({'reply': controller.text.trim()});
-
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Ответ добавлен'),
-                  backgroundColor: AppColors.success,
+              if (!dialogContext.mounted) return;
+              Navigator.pop(dialogContext);
+              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                SnackBar(
+                  content: Text('reply_added'.tr()),
+                  backgroundColor: ChoyPalette.success,
                 ),
               );
             },
-            child: const Text('Отправить'),
+            child: Text('send'.tr()),
           ),
         ],
       ),
