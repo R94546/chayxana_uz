@@ -1,11 +1,12 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:easy_localization/easy_localization.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_text_styles.dart';
+import 'package:flutter/material.dart';
+
+import '../../core/design/choy_components.dart';
+import '../../core/design/choy_tokens.dart';
 import '../../models/menu_item_model.dart';
 
-/// Экран управления меню чайханы
+/// 🍽️ Menyu boshqaruvi — premium redizayn + lokalizatsiya (Faza 4/5).
 class MenuManagementScreen extends StatefulWidget {
   final String choyxonaId;
   final String choyxonaName;
@@ -23,77 +24,72 @@ class MenuManagementScreen extends StatefulWidget {
 class _MenuManagementScreenState extends State<MenuManagementScreen> {
   String _selectedCategory = 'all';
 
-  final List<Map<String, String>> _categories = [
-    {'value': 'all', 'label': 'Все'},
-    {'value': 'main', 'label': 'Основные блюда'},
-    {'value': 'soup', 'label': 'Супы'},
-    {'value': 'salad', 'label': 'Салаты'},
-    {'value': 'appetizer', 'label': 'Закуски'},
-    {'value': 'dessert', 'label': 'Десерты'},
-    {'value': 'beverage', 'label': 'Напитки'},
+  // value -> lokalizatsiya kaliti
+  static const List<Map<String, String>> _categories = [
+    {'value': 'all', 'key': 'category_all'},
+    {'value': 'main', 'key': 'menu_cat_main'},
+    {'value': 'soup', 'key': 'menu_cat_soup'},
+    {'value': 'salad', 'key': 'menu_cat_salad'},
+    {'value': 'appetizer', 'key': 'menu_cat_appetizer'},
+    {'value': 'dessert', 'key': 'menu_cat_dessert'},
+    {'value': 'beverage', 'key': 'menu_cat_beverage'},
   ];
+
+  String _catLabel(String value) {
+    final cat = _categories.firstWhere((c) => c['value'] == value,
+        orElse: () => {'key': value});
+    return cat['key']!.tr();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
+    final c = ChoyColors.of(context);
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text('menu_management'.tr()),
-        elevation: 0,
-      ),
+      backgroundColor: c.background,
+      appBar: AppBar(title: Text('menu_management'.tr())),
       body: Column(
         children: [
-          // Категории
           SizedBox(
-            height: 50,
-            child: ListView.builder(
+            height: 56,
+            child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: ChoySpace.lg, vertical: ChoySpace.sm),
               itemCount: _categories.length,
+              separatorBuilder: (_, __) => const SizedBox(width: ChoySpace.sm),
               itemBuilder: (context, index) {
                 final cat = _categories[index];
-                final isSelected = _selectedCategory == cat['value'];
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(cat['label']!),
-                    selected: isSelected,
-                    onSelected: (_) => setState(() => _selectedCategory = cat['value']!),
-                    selectedColor: Theme.of(context).primaryColor,
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : null,
-                    ),
-                  ),
+                return ChoyChip(
+                  label: cat['key']!.tr(),
+                  selected: _selectedCategory == cat['value'],
+                  onTap: () =>
+                      setState(() => _selectedCategory = cat['value']!),
                 );
               },
             ),
           ),
-
-          const SizedBox(height: 8),
-
-          // Список блюд
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _getMenuStream(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
+                  return Center(
+                      child: CircularProgressIndicator(color: c.primary));
                 }
-
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return _buildEmptyState(isDark);
+                  return ChoyEmptyState(
+                    icon: Icons.restaurant_menu_rounded,
+                    title: 'menu_empty'.tr(),
+                    message: 'add_first_dish'.tr(),
+                  );
                 }
-
                 final items = snapshot.data!.docs
                     .map((doc) => MenuItem.fromFirestore(doc))
                     .toList();
-
                 return ListView.builder(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(ChoySpace.lg),
                   itemCount: items.length,
-                  itemBuilder: (context, index) => _buildMenuItem(items[index], isDark),
+                  itemBuilder: (context, index) => _buildMenuItem(items[index]),
                 );
               },
             ),
@@ -102,9 +98,8 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddEditDialog(null),
-        backgroundColor: Theme.of(context).primaryColor,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: Text('add_dish'.tr(), style: const TextStyle(color: Colors.white)),
+        icon: const Icon(Icons.add_rounded),
+        label: Text('add_dish'.tr()),
       ),
     );
   }
@@ -113,125 +108,100 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
     var query = FirebaseFirestore.instance
         .collection('menu_items')
         .where('choyxonaId', isEqualTo: widget.choyxonaId);
-
     if (_selectedCategory != 'all') {
       query = query.where('category', isEqualTo: _selectedCategory);
     }
-
     return query.snapshots();
   }
 
-  Widget _buildMenuItem(MenuItem item, bool isDark) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      color: isDark ? AppColors.darkSurface : AppColors.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(12),
-        leading: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: item.imageUrl.isNotEmpty
-              ? Image.network(item.imageUrl, width: 60, height: 60, fit: BoxFit.cover)
-              : Container(
-                  width: 60,
-                  height: 60,
-                  color: isDark ? AppColors.darkSurfaceVariant : AppColors.surfaceVariant,
-                  child: const Icon(Icons.restaurant_menu),
-                ),
-        ),
-        title: Text(
-          item.name,
-          style: AppTextStyles.titleMedium.copyWith(
-            color: isDark ? AppColors.darkTextPrimary : AppColors.textPrimary,
-          ),
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildMenuItem(MenuItem item) {
+    final c = ChoyColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: ChoySpace.md),
+      child: ChoyCard(
+        padding: const EdgeInsets.all(ChoySpace.md),
+        child: Row(
           children: [
-            Text(
-              MenuItem.getCategoryName(item.category, 'ru'),
-              style: TextStyle(
-                fontSize: 12,
-                color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
+            ClipRRect(
+              borderRadius: ChoyRadius.all(ChoyRadius.md),
+              child: SizedBox(
+                width: 60,
+                height: 60,
+                child: item.imageUrl.isNotEmpty
+                    ? Image.network(item.imageUrl, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                            color: c.surfaceVariant,
+                            child: Icon(Icons.restaurant_menu_rounded,
+                                color: c.textMuted)))
+                    : Container(
+                        color: c.surfaceVariant,
+                        child: Icon(Icons.restaurant_menu_rounded,
+                            color: c.textMuted)),
               ),
             ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Text(
-                  '${item.price.toStringAsFixed(0)} сум',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).primaryColor,
+            const SizedBox(width: ChoySpace.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.name,
+                      style: TextStyle(
+                          color: c.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  Text(_catLabel(item.category),
+                      style: TextStyle(fontSize: 12, color: c.textMuted)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text('${item.price.toStringAsFixed(0)} ${'currency_sum'.tr()}',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w700, color: c.primary)),
+                      const Spacer(),
+                      ChoyStatusBadge(
+                        label: item.isAvailable
+                            ? 'in_stock'.tr()
+                            : 'out_of_stock'.tr(),
+                        tone: item.isAvailable
+                            ? ChoyStatusTone.success
+                            : ChoyStatusTone.danger,
+                      ),
+                    ],
                   ),
+                ],
+              ),
+            ),
+            PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert_rounded, color: c.textMuted),
+              onSelected: (value) {
+                if (value == 'edit') {
+                  _showAddEditDialog(item);
+                } else if (value == 'toggle') {
+                  _toggleAvailability(item);
+                } else if (value == 'delete') {
+                  _deleteItem(item);
+                }
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(value: 'edit', child: Text('edit'.tr())),
+                PopupMenuItem(
+                  value: 'toggle',
+                  child: Text(item.isAvailable
+                      ? 'mark_unavailable'.tr()
+                      : 'mark_available'.tr()),
                 ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: item.isAvailable ? AppColors.success : AppColors.error,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    item.isAvailable ? 'В наличии' : 'Нет в наличии',
-                    style: const TextStyle(color: Colors.white, fontSize: 10),
-                  ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Text('delete'.tr(),
+                      style: const TextStyle(color: ChoyPalette.danger)),
                 ),
               ],
             ),
           ],
         ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) {
-            if (value == 'edit') {
-              _showAddEditDialog(item);
-            } else if (value == 'toggle') {
-              _toggleAvailability(item);
-            } else if (value == 'delete') {
-              _deleteItem(item);
-            }
-          },
-          itemBuilder: (context) => [
-            PopupMenuItem(value: 'edit', child: Text('Редактировать')),
-            PopupMenuItem(
-              value: 'toggle',
-              child: Text(item.isAvailable ? 'Отметить недоступным' : 'Отметить доступным'),
-            ),
-            PopupMenuItem(
-              value: 'delete',
-              child: Text('Удалить', style: const TextStyle(color: AppColors.error)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(bool isDark) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.restaurant_menu,
-            size: 64,
-            color: isDark ? AppColors.darkTextLight : AppColors.textLight,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Меню пусто',
-            style: AppTextStyles.titleMedium.copyWith(
-              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Добавьте первое блюдо',
-            style: TextStyle(
-              color: isDark ? AppColors.darkTextSecondary : AppColors.textSecondary,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -240,56 +210,53 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
     final isEdit = item != null;
     final nameController = TextEditingController(text: item?.name ?? '');
     final descController = TextEditingController(text: item?.description ?? '');
-    final priceController = TextEditingController(text: item?.price.toStringAsFixed(0) ?? '');
+    final priceController =
+        TextEditingController(text: item?.price.toStringAsFixed(0) ?? '');
     String category = item?.category ?? 'main';
 
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: Text(isEdit ? 'Редактировать блюдо' : 'Добавить блюдо'),
+          title: Text(isEdit ? 'edit_dish'.tr() : 'add_dish'.tr()),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Название блюда',
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: InputDecoration(labelText: 'dish_name'.tr()),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: ChoySpace.md),
                 TextField(
                   controller: descController,
-                  decoration: const InputDecoration(
-                    labelText: 'Описание',
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration:
+                      InputDecoration(labelText: 'dish_description'.tr()),
                   maxLines: 2,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: ChoySpace.md),
                 TextField(
                   controller: priceController,
-                  decoration: const InputDecoration(
-                    labelText: 'Цена',
-                    suffixText: 'сум',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: 'dish_price'.tr(),
+                    suffixText: 'currency_sum'.tr(),
                   ),
                   keyboardType: TextInputType.number,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: ChoySpace.md),
                 DropdownButtonFormField<String>(
-                  value: category,
-                  decoration: const InputDecoration(
-                    labelText: 'Категория',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: _categories.skip(1).map((cat) => DropdownMenuItem(
-                    value: cat['value'],
-                    child: Text(cat['label']!),
-                  )).toList(),
-                  onChanged: (value) => setDialogState(() => category = value!),
+                  initialValue: category,
+                  decoration:
+                      InputDecoration(labelText: 'dish_category'.tr()),
+                  items: _categories
+                      .skip(1)
+                      .map((cat) => DropdownMenuItem(
+                            value: cat['value'],
+                            child: Text(cat['key']!.tr()),
+                          ))
+                      .toList(),
+                  onChanged: (value) =>
+                      setDialogState(() => category = value!),
                 ),
               ],
             ),
@@ -323,8 +290,8 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
         'isPopular': item?.isPopular ?? false,
         'preparationTime': 15,
         'ingredients': <String>[],
-        'createdAt': item?.createdAt != null 
-            ? Timestamp.fromDate(item!.createdAt) 
+        'createdAt': item?.createdAt != null
+            ? Timestamp.fromDate(item!.createdAt)
             : FieldValue.serverTimestamp(),
       };
 
@@ -332,27 +299,14 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
         if (isEdit) {
           await FirebaseFirestore.instance
               .collection('menu_items')
-              .doc(item!.id)
+              .doc(item.id)
               .update(data);
         } else {
-          await FirebaseFirestore.instance
-              .collection('menu_items')
-              .add(data);
+          await FirebaseFirestore.instance.collection('menu_items').add(data);
         }
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(isEdit ? 'Блюдо обновлено' : 'Блюдо добавлено'),
-              backgroundColor: AppColors.success,
-            ),
-          );
-        }
+        if (mounted) _snack('dish_saved'.tr());
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Ошибка: $e'), backgroundColor: AppColors.error),
-          );
-        }
+        if (mounted) _snack('${'error'.tr()}: $e', error: true);
       }
     }
   }
@@ -364,11 +318,7 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
           .doc(item.id)
           .update({'isAvailable': !item.isAvailable});
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ошибка: $e'), backgroundColor: AppColors.error),
-        );
-      }
+      if (mounted) _snack('${'error'.tr()}: $e', error: true);
     }
   }
 
@@ -376,17 +326,17 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Удалить блюдо?'),
-        content: const Text('Это действие нельзя отменить'),
+        title: Text('delete_dish_title'.tr()),
+        content: Text('delete_dish_confirm'.tr()),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text('cancel'.tr()),
           ),
-          ElevatedButton(
+          TextButton(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
-            child: Text('delete'.tr()),
+            child: Text('delete'.tr(),
+                style: const TextStyle(color: ChoyPalette.danger)),
           ),
         ],
       ),
@@ -398,18 +348,19 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
             .collection('menu_items')
             .doc(item.id)
             .delete();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: const Text('Блюдо удалено'), backgroundColor: AppColors.success),
-          );
-        }
+        if (mounted) _snack('dish_saved'.tr());
       } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Ошибка: $e'), backgroundColor: AppColors.error),
-          );
-        }
+        if (mounted) _snack('${'error'.tr()}: $e', error: true);
       }
     }
+  }
+
+  void _snack(String msg, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: error ? ChoyPalette.danger : ChoyPalette.success,
+      ),
+    );
   }
 }
